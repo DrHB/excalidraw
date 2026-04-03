@@ -160,6 +160,40 @@ describe("restoreElements", () => {
     });
   });
 
+  it("should restore fixed freedraw element correctly", () => {
+    const freedrawElement = API.createElement({
+      type: "freedraw",
+      id: "id-freedraw02",
+      strokeShape: "fixed",
+      points: [pointFrom(0, 0), pointFrom(10, 10)],
+    });
+
+    const restoredFreedraw = restore.restoreElements(
+      [freedrawElement],
+      null,
+    )[0] as ExcalidrawFreeDrawElement;
+
+    expect(restoredFreedraw.strokeShape).toBe("fixed");
+  });
+
+  it("should restore legacy stable freedraw element as fixed", () => {
+    const restoredFreedraw = restore.restoreElements(
+      [
+        {
+          ...API.createElement({
+            type: "freedraw",
+            id: "id-freedraw03",
+            points: [pointFrom(0, 0), pointFrom(10, 10)],
+          }),
+          strokeShape: "stable",
+        } as any,
+      ],
+      null,
+    )[0] as ExcalidrawFreeDrawElement;
+
+    expect(restoredFreedraw.strokeShape).toBe("fixed");
+  });
+
   it("should restore line and draw elements correctly", () => {
     const lineElement = API.createElement({ type: "line", id: "id-line01" });
 
@@ -639,6 +673,26 @@ describe("restoreAppState", () => {
     );
     expect(restoredAppState.cursorButton).toBe("up");
     expect(restoredAppState.name).toBe(stubImportedAppState.name);
+  });
+
+  it("should restore fixed freedraw stroke type from app state", () => {
+    const restoredAppState = restore.restoreAppState(
+      { currentItemStrokeShape: "fixed" } as ImportedDataState["appState"],
+      null,
+    );
+
+    expect(restoredAppState.currentItemStrokeShape).toBe("fixed");
+  });
+
+  it("should restore legacy stable freedraw stroke type from app state as fixed", () => {
+    const restoredAppState = restore.restoreAppState(
+      {
+        currentItemStrokeShape: "stable",
+      } as unknown as ImportedDataState["appState"],
+      null,
+    );
+
+    expect(restoredAppState.currentItemStrokeShape).toBe("fixed");
   });
 
   it("should return local app state when imported data state is null", () => {

@@ -26,6 +26,7 @@ export type PointerType = "mouse" | "pen" | "touch";
 export type StrokeRoundness = "round" | "sharp";
 export type RoundnessType = ValueOf<typeof ROUNDNESS>;
 export type StrokeStyle = "solid" | "dashed" | "dotted";
+export type FreeDrawStrokeShape = "variable" | "fixed";
 export type TextAlign = typeof TEXT_ALIGN[keyof typeof TEXT_ALIGN];
 
 type VerticalAlignKeys = keyof typeof VERTICAL_ALIGN;
@@ -390,6 +391,7 @@ export type ExcalidrawFreeDrawElement = _ExcalidrawElementBase &
     points: readonly LocalPoint[];
     pressures: readonly number[];
     simulatePressure: boolean;
+    strokeShape?: FreeDrawStrokeShape;
   }>;
 
 export type FileId = string & { _brand: "FileId" };

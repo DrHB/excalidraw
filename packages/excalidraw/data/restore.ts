@@ -96,6 +96,13 @@ type RestoredAppState = Omit<
   "offsetTop" | "offsetLeft" | "width" | "height"
 >;
 
+const normalizeFreeDrawStrokeShape = (
+  strokeShape: unknown,
+): AppState["currentItemStrokeShape"] =>
+  strokeShape === "fixed" || strokeShape === "stable"
+    ? "fixed"
+    : undefined;
+
 export const AllowedExcalidrawActiveTools: Record<
   AppState["activeTool"]["type"],
   boolean
@@ -412,10 +419,12 @@ export const restoreElement = (
 
       return element;
     case "freedraw": {
+      const strokeShape = normalizeFreeDrawStrokeShape(element.strokeShape);
       return restoreElementWithProperties(element, {
         points: element.points,
         simulatePressure: element.simulatePressure,
         pressures: element.pressures,
+        ...(strokeShape ? { strokeShape } : {}),
       });
     }
     case "image":
@@ -944,6 +953,16 @@ export const restoreAppState = (
 
   return {
     ...nextAppState,
+    ...(normalizeFreeDrawStrokeShape(
+      appState.currentItemStrokeShape ?? localAppState?.currentItemStrokeShape,
+    )
+      ? {
+          currentItemStrokeShape: normalizeFreeDrawStrokeShape(
+            appState.currentItemStrokeShape ??
+              localAppState?.currentItemStrokeShape,
+          ),
+        }
+      : {}),
     cursorButton: localAppState?.cursorButton || "up",
     // reset on fresh restore so as to hide the UI button if penMode not active
     penDetected:

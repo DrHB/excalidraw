@@ -69,6 +69,7 @@ export * from "./duplicate";
 export * from "./elbowArrow";
 export * from "./elementLink";
 export * from "./embeddable";
+export * from "./freedraw";
 export * from "./flowchart";
 export * from "./arrows/focus";
 export * from "./fractionalIndex";

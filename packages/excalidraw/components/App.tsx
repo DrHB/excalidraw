@@ -9,6 +9,7 @@ import {
   clamp,
   pointFrom,
   pointDistance,
+  round,
   vector,
   pointRotateRads,
   vectorFromPoint,
@@ -119,6 +120,7 @@ import {
   getElementAbsoluteCoords,
   bindOrUnbindBindingElements,
   fixBindingsAfterDeletion,
+  getFixedFreeDrawPointAction,
   getHoveredElementForBinding,
   isBindingEnabled,
   updateBoundElements,
@@ -614,6 +616,22 @@ const gesture: Gesture = {
   initialDistance: null,
   initialScale: null,
 };
+
+const FREEDRAW_POINT_DECIMALS = 2;
+const FREEDRAW_PRESSURE_DECIMALS = 3;
+const FREEDRAW_DOT_EPSILON = 1 / 10 ** FREEDRAW_POINT_DECIMALS;
+
+const roundFreeDrawCoordinate = (value: number) =>
+  round(value, FREEDRAW_POINT_DECIMALS);
+
+const roundFreeDrawPressure = (value: number) =>
+  round(value, FREEDRAW_PRESSURE_DECIMALS);
+
+const getRoundedFreeDrawPoint = (x: number, y: number) =>
+  pointFrom<LocalPoint>(
+    roundFreeDrawCoordinate(x),
+    roundFreeDrawCoordinate(y),
+  );
 
 class App extends React.Component<AppProps, AppState> {
   canvas: AppClassProperties["canvas"];
@@ -8833,10 +8851,11 @@ class App extends React.Component<AppProps, AppState> {
       opacity: this.state.currentItemOpacity,
       roundness: null,
       simulatePressure,
+      strokeShape: this.state.currentItemStrokeShape,
       locked: false,
       frameId: topLayerFrame ? topLayerFrame.id : null,
       points: [pointFrom<LocalPoint>(0, 0)],
-      pressures: simulatePressure ? [] : [event.pressure],
+      pressures: simulatePressure ? [] : [roundFreeDrawPressure(event.pressure)],
     });
 
     this.scene.insertElement(element);
@@ -10174,20 +10193,36 @@ class App extends React.Component<AppProps, AppState> {
           const points = newElement.points;
           const dx = pointerCoords.x - newElement.x;
           const dy = pointerCoords.y - newElement.y;
+          const nextPoint = getRoundedFreeDrawPoint(dx, dy);
+          const pressure = roundFreeDrawPressure(event.pressure);
+          const pointAction =
+            newElement.strokeShape === "fixed"
+              ? getFixedFreeDrawPointAction({
+                  points,
+                  nextPoint,
+                  strokeWidth: newElement.strokeWidth,
+                  zoomValue: this.state.zoom.value,
+                })
+              : points.length > 0 &&
+                  points[points.length - 1][0] === nextPoint[0] &&
+                  points[points.length - 1][1] === nextPoint[1]
+                ? "discard"
+                : "append";
 
-          const lastPoint = points.length > 0 && points[points.length - 1];
-          const discardPoint =
-            lastPoint && lastPoint[0] === dx && lastPoint[1] === dy;
-
-          if (!discardPoint) {
+          if (pointAction !== "discard") {
             const pressures = newElement.simulatePressure
               ? newElement.pressures
-              : [...newElement.pressures, event.pressure];
+              : pointAction === "replace"
+                ? [...newElement.pressures.slice(0, -1), pressure]
+                : [...newElement.pressures, pressure];
 
             this.scene.mutateElement(
               newElement,
               {
-                points: [...points, pointFrom<LocalPoint>(dx, dy)],
+                points:
+                  pointAction === "replace"
+                    ? [...points.slice(0, -1), nextPoint]
+                    : [...points, nextPoint],
                 pressures,
               },
               {
@@ -10627,23 +10662,51 @@ class App extends React.Component<AppProps, AppState> {
         );
 
         const points = newElement.points;
-        let dx = pointerCoords.x - newElement.x;
-        let dy = pointerCoords.y - newElement.y;
+        const dx = pointerCoords.x - newElement.x;
+        const dy = pointerCoords.y - newElement.y;
+        let nextPoint = getRoundedFreeDrawPoint(dx, dy);
 
         // Allows dots to avoid being flagged as infinitely small
-        if (dx === points[0][0] && dy === points[0][1]) {
-          dy += 0.0001;
-          dx += 0.0001;
+        if (
+          nextPoint[0] === points[0][0] &&
+          nextPoint[1] === points[0][1]
+        ) {
+          nextPoint = getRoundedFreeDrawPoint(
+            dx + FREEDRAW_DOT_EPSILON,
+            dy + FREEDRAW_DOT_EPSILON,
+          );
         }
 
-        const pressures = newElement.simulatePressure
-          ? []
-          : [...newElement.pressures, childEvent.pressure];
+        const lastPoint = points[points.length - 1];
+        const pressure = roundFreeDrawPressure(childEvent.pressure);
+        const pointAction =
+          newElement.strokeShape === "fixed"
+            ? getFixedFreeDrawPointAction({
+                points,
+                nextPoint,
+                strokeWidth: newElement.strokeWidth,
+                zoomValue: this.state.zoom.value,
+                isFinalPoint: true,
+              })
+            : !lastPoint ||
+                lastPoint[0] !== nextPoint[0] ||
+                lastPoint[1] !== nextPoint[1]
+              ? "append"
+              : "discard";
 
-        this.scene.mutateElement(newElement, {
-          points: [...points, pointFrom<LocalPoint>(dx, dy)],
-          pressures,
-        });
+        if (pointAction !== "discard") {
+          this.scene.mutateElement(newElement, {
+            points:
+              pointAction === "replace"
+                ? [...points.slice(0, -1), nextPoint]
+                : [...points, nextPoint],
+            pressures: newElement.simulatePressure
+              ? []
+              : pointAction === "replace"
+                ? [...newElement.pressures.slice(0, -1), pressure]
+                : [...newElement.pressures, pressure],
+          });
+        }
 
         this.actionManager.executeAction(actionFinalize);
 

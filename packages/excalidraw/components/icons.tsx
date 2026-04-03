@@ -1164,7 +1164,7 @@ export const StrokeWidthBaseIcon = createIcon(
   modifiedTablerIconProps,
 );
 
-export const StrokeWidthBoldIcon = createIcon(
+export const StrokeWidthMediumIcon = createIcon(
   <path
     d="M5 10h10"
     stroke="currentColor"
@@ -1175,11 +1175,53 @@ export const StrokeWidthBoldIcon = createIcon(
   modifiedTablerIconProps,
 );
 
-export const StrokeWidthExtraBoldIcon = createIcon(
+export const StrokeWidthBoldIcon = createIcon(
   <path
     d="M5 10h10"
     stroke="currentColor"
     strokeWidth="3.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  />,
+  modifiedTablerIconProps,
+);
+
+export const StrokeWidthExtraBoldIcon = createIcon(
+  <path
+    d="M5 10h10"
+    stroke="currentColor"
+    strokeWidth="5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  />,
+  modifiedTablerIconProps,
+);
+
+export const StrokeShapeVariableIcon = createIcon(
+  <>
+    <path
+      d="M3.5 12.5c1.8-3.5 4.1-5.2 6.8-5.2 2.4 0 4.4 1.3 6.2 3.9"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M7.75 10.8c1-.9 2-1.35 3.05-1.35 1.2 0 2.4.57 3.7 1.72"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </>,
+  modifiedTablerIconProps,
+);
+
+export const StrokeShapeFixedIcon = createIcon(
+  <path
+    d="M3.5 12h13"
+    stroke="currentColor"
+    strokeWidth="2.5"
     strokeLinecap="round"
     strokeLinejoin="round"
   />,

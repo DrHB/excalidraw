@@ -6,7 +6,11 @@ import type { LocalPoint } from "@excalidraw/math";
 
 import { getElementAbsoluteCoords, getElementBounds } from "../src/bounds";
 
-import type { ExcalidrawElement, ExcalidrawLinearElement } from "../src/types";
+import type {
+  ExcalidrawElement,
+  ExcalidrawFreeDrawElement,
+  ExcalidrawLinearElement,
+} from "../src/types";
 
 const _ce = ({
   x,
@@ -115,6 +119,31 @@ describe("getElementBounds", () => {
     expect(y1).toEqual(27.09430584957905);
     expect(x2).toEqual(57.90569415042095);
     expect(y2).toEqual(42.90569415042095);
+  });
+
+  it("fixed freedraw", () => {
+    const element = {
+      ..._ce({
+        x: 40,
+        y: 30,
+        w: 10,
+        h: 0,
+        a: 0,
+        t: "freedraw",
+      }),
+      strokeWidth: 8,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(10, 0)],
+      pressures: [],
+      simulatePressure: true,
+      strokeShape: "fixed",
+    } as unknown as ExcalidrawFreeDrawElement;
+
+    const [x1, y1, x2, y2] = getElementBounds(element, arrayToMap([element]));
+
+    expect(x1).toEqual(36);
+    expect(y1).toEqual(26);
+    expect(x2).toEqual(54);
+    expect(y2).toEqual(34);
   });
 
   it("curved line", () => {

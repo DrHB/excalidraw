@@ -168,12 +168,14 @@ export class ElementBounds {
           ),
         ),
       );
+      const padding =
+        element.strokeShape === "fixed" ? element.strokeWidth / 2 : 0;
 
       return [
-        minX + element.x,
-        minY + element.y,
-        maxX + element.x,
-        maxY + element.y,
+        minX + element.x - padding,
+        minY + element.y - padding,
+        maxX + element.x + padding,
+        maxY + element.y + padding,
       ];
     } else if (isLinearElement(element)) {
       bounds = getLinearElementRotatedBounds(element, cx, cy, elementsMap);
@@ -703,10 +705,11 @@ const getFreeDrawElementAbsoluteCoords = (
   element: ExcalidrawFreeDrawElement,
 ): [number, number, number, number, number, number] => {
   const [minX, minY, maxX, maxY] = getBoundsFromPoints(element.points);
-  const x1 = minX + element.x;
-  const y1 = minY + element.y;
-  const x2 = maxX + element.x;
-  const y2 = maxY + element.y;
+  const padding = element.strokeShape === "fixed" ? element.strokeWidth / 2 : 0;
+  const x1 = minX + element.x - padding;
+  const y1 = minY + element.y - padding;
+  const x2 = maxX + element.x + padding;
+  const y2 = maxY + element.y + padding;
   return [x1, y1, x2, y2, (x1 + x2) / 2, (y1 + y2) / 2];
 };
 

@@ -405,8 +405,9 @@ export const ROUGHNESS = {
 
 export const STROKE_WIDTH = {
   thin: 1,
-  bold: 2,
-  extraBold: 4,
+  medium: 2,
+  bold: 4,
+  extraBold: 8,
 } as const;
 
 export const DEFAULT_ELEMENT_PROPS: {
@@ -428,6 +429,8 @@ export const DEFAULT_ELEMENT_PROPS: {
   opacity: 100,
   locked: false,
 };
+
+export const DEFAULT_FREE_DRAW_STROKE_SHAPE = "variable" as const;
 
 export const LIBRARY_SIDEBAR_TAB = "library";
 export const CANVAS_SEARCH_TAB = "search";

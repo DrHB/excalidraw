@@ -172,6 +172,7 @@ const APP_STATE_STORAGE_CONF = (<
   currentItemStrokeColor: { browser: true, export: false, server: false },
   currentItemStrokeStyle: { browser: true, export: false, server: false },
   currentItemStrokeWidth: { browser: true, export: false, server: false },
+  currentItemStrokeShape: { browser: true, export: false, server: false },
   currentItemTextAlign: { browser: true, export: false, server: false },
   currentHoveredFontFamily: { browser: false, export: false, server: false },
   cursorButton: { browser: true, export: false, server: false },

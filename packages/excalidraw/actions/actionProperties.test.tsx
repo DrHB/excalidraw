@@ -1,4 +1,5 @@
 import { queryByTestId } from "@testing-library/react";
+import { pointFrom } from "@excalidraw/math";
 
 import {
   COLOR_PALETTE,
@@ -10,7 +11,7 @@ import {
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { UI } from "../tests/helpers/ui";
-import { render } from "../tests/test-utils";
+import { act, render } from "../tests/test-utils";
 
 describe("element locking", () => {
   beforeEach(async () => {
@@ -80,6 +81,20 @@ describe("element locking", () => {
       const centerTextAlign = queryByTestId(document.body, `align-right`);
       expect(centerTextAlign).toBeChecked();
     });
+
+    it("should show the active freedraw stroke type", () => {
+      UI.clickTool("freedraw");
+
+      API.setAppState({
+        currentItemStrokeShape: "fixed",
+      });
+
+      const fixedStrokeShape = queryByTestId(
+        document.body,
+        "strokeShape-fixed",
+      );
+      expect(fixedStrokeShape).toBeChecked();
+    });
   });
 
   describe("properties when elements selected", () => {
@@ -145,6 +160,9 @@ describe("element locking", () => {
         queryByTestId(document.body, `strokeWidth-thin`),
       ).not.toBeChecked();
       expect(
+        queryByTestId(document.body, `strokeWidth-medium`),
+      ).not.toBeChecked();
+      expect(
         queryByTestId(document.body, `strokeWidth-bold`),
       ).not.toBeChecked();
       expect(
@@ -159,6 +177,7 @@ describe("element locking", () => {
       });
       const text = API.createElement({
         type: "text",
+        strokeWidth: STROKE_WIDTH.bold,
         fontFamily: FONT_FAMILY["Comic Shanns"],
       });
       API.setElements([rect, text]);
@@ -168,6 +187,36 @@ describe("element locking", () => {
       expect(queryByTestId(document.body, `font-family-code`)).toHaveClass(
         "active",
       );
+    });
+
+    it("should highlight the fixed freedraw stroke type for selected elements", () => {
+      const freedraw = API.createElement({
+        type: "freedraw",
+        strokeShape: "fixed",
+        points: [pointFrom(0, 0), pointFrom(10, 10), pointFrom(20, 15)],
+      });
+      API.setElements([freedraw]);
+      API.setSelectedElements([freedraw]);
+
+      const fixedStrokeShape = queryByTestId(
+        document.body,
+        "strokeShape-fixed",
+      );
+      expect(fixedStrokeShape).toBeChecked();
+    });
+
+    it("should apply fixed freedraw stroke type to newly drawn strokes", () => {
+      UI.clickTool("freedraw");
+
+      act(() => {
+        queryByTestId(document.body, "strokeShape-fixed")?.click();
+      });
+
+      const freedraw = UI.createElement("freedraw", {
+        points: [pointFrom(0, 0), pointFrom(10, 10), pointFrom(20, 15)],
+      });
+
+      expect(freedraw.strokeShape).toBe("fixed");
     });
   });
 });

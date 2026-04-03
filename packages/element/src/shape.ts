@@ -1,4 +1,5 @@
 import { simplify } from "points-on-curve";
+import { DEFAULT_FREE_DRAW_STROKE_SHAPE } from "@excalidraw/common";
 import { getStroke } from "perfect-freehand";
 
 import {
@@ -13,6 +14,7 @@ import {
 import {
   pointFrom,
   pointDistance,
+  round,
   type LocalPoint,
   pointRotateRads,
 } from "@excalidraw/math";
@@ -52,6 +54,10 @@ import {
   isIframeLikeElement,
   isLinearElement,
 } from "./typeChecks";
+import {
+  getRenderableFixedFreeDrawPoints,
+  isLoopFreeDrawElement,
+} from "./freedraw";
 import { getCornerRadius, isPathALoop } from "./utils";
 import { headingForPointIsHorizontal } from "./heading";
 
@@ -244,7 +250,12 @@ export const generateRoughOptions = (
     }
     case "line":
     case "freedraw": {
-      if (isPathALoop(element.points)) {
+      const isLoop =
+        element.type === "freedraw"
+          ? isLoopFreeDrawElement(element)
+          : isPathALoop(element.points);
+
+      if (isLoop) {
         options.fillStyle = element.fillStyle;
         options.fill =
           element.backgroundColor === "transparent"
@@ -966,7 +977,7 @@ const _generateElementShape = (
       const shapes: ElementShapes[typeof element.type] = [];
 
       // (1) background fill (rc shape), optional
-      if (isPathALoop(element.points)) {
+      if (isLoopFreeDrawElement(element)) {
         // generate rough polygon to fill freedraw shape
         const simplifiedPoints = simplify(
           element.points as Mutable<LocalPoint[]>,
@@ -1173,6 +1184,12 @@ export const toggleLinePolygonState = (
 
 // NOTE not cached (-> for SVG export)
 const getFreeDrawSvgPath = (element: ExcalidrawFreeDrawElement) => {
+  if (element.strokeShape === "fixed") {
+    return getSvgPathFromFixedFreeDrawPoints(
+      getRenderableFixedFreeDrawPoints(element),
+    ) as SVGPathString;
+  }
+
   return getSvgPathFromStroke(
     getFreedrawOutlinePoints(element),
   ) as SVGPathString;
@@ -1181,34 +1198,127 @@ const getFreeDrawSvgPath = (element: ExcalidrawFreeDrawElement) => {
 export const getFreedrawOutlinePoints = (
   element: ExcalidrawFreeDrawElement,
 ) => {
+  const strokeShape = element.strokeShape ?? DEFAULT_FREE_DRAW_STROKE_SHAPE;
+  const isFixedStroke = strokeShape === "fixed";
   // If input points are empty (should they ever be?) return a dot
-  const inputPoints = element.simulatePressure
+  const inputPoints = isFixedStroke
+    ? element.points.length
+      ? element.points
+      : [[0, 0]]
+    : element.simulatePressure
     ? element.points
     : element.points.length
     ? element.points.map(([x, y], i) => [x, y, element.pressures[i]])
     : [[0, 0, 0.5]];
 
   return getStroke(inputPoints as number[][], {
-    simulatePressure: element.simulatePressure,
-    size: element.strokeWidth * 4.25,
-    thinning: 0.6,
+    simulatePressure: isFixedStroke ? false : element.simulatePressure,
+    size: isFixedStroke ? element.strokeWidth : element.strokeWidth * 4.25,
+    thinning: isFixedStroke ? 0 : 0.6,
     smoothing: 0.5,
     streamline: 0.5,
-    easing: (t) => Math.sin((t * Math.PI) / 2), // https://easings.net/#easeOutSine
+    easing: isFixedStroke ? (t) => t : (t) => Math.sin((t * Math.PI) / 2), // https://easings.net/#easeOutSine
     last: true,
   }) as [number, number][];
 };
 
-const med = (A: number[], B: number[]) => {
+const med = (A: readonly number[], B: readonly number[]) => {
   return [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
 };
+
+const roundPoint = (point: readonly number[]) =>
+  `${round(point[0], 2)},${round(point[1], 2)} `;
+
+const averagePoint = (A: readonly number[], B: readonly number[]) =>
+  `${round((A[0] + B[0]) / 2, 2)},${round((A[1] + B[1]) / 2, 2)} `;
 
 // Trim SVG path data so number are each two decimal points. This
 // improves SVG exports, and prevents rendering errors on points
 // with long decimals.
 const TO_FIXED_PRECISION = /(\s?[A-Z]?,?-?[0-9]*\.[0-9]{0,2})(([0-9]|e|-)*)/g;
 
-const getSvgPathFromStroke = (points: number[][]): string => {
+const getSvgPathFromPoints = (
+  points: ReadonlyArray<readonly number[]>,
+  closed = false,
+): string => {
+  const len = points.length;
+
+  if (len < 2) {
+    return "";
+  }
+
+  const path = points
+    .slice(1)
+    .map((point) => `L${roundPoint(point)}`)
+    .join("");
+
+  return `M${roundPoint(points[0])}${path}${closed ? "Z" : ""}`;
+};
+
+const FIXED_FREEDRAW_MIN_SMOOTH_ALIGNMENT = 0.6;
+const FIXED_FREEDRAW_MIN_SMOOTH_SEGMENT_LENGTH = 0.2;
+
+const shouldSmoothFixedFreeDrawPoint = (
+  previousPoint: readonly number[],
+  currentPoint: readonly number[],
+  nextPoint: readonly number[],
+) => {
+  const previousDeltaX = currentPoint[0] - previousPoint[0];
+  const previousDeltaY = currentPoint[1] - previousPoint[1];
+  const nextDeltaX = nextPoint[0] - currentPoint[0];
+  const nextDeltaY = nextPoint[1] - currentPoint[1];
+  const previousSegmentLength = Math.hypot(previousDeltaX, previousDeltaY);
+  const nextSegmentLength = Math.hypot(nextDeltaX, nextDeltaY);
+
+  if (
+    previousSegmentLength < FIXED_FREEDRAW_MIN_SMOOTH_SEGMENT_LENGTH ||
+    nextSegmentLength < FIXED_FREEDRAW_MIN_SMOOTH_SEGMENT_LENGTH
+  ) {
+    return false;
+  }
+
+  const alignment =
+    (previousDeltaX * nextDeltaX + previousDeltaY * nextDeltaY) /
+    (previousSegmentLength * nextSegmentLength);
+
+  return alignment >= FIXED_FREEDRAW_MIN_SMOOTH_ALIGNMENT;
+};
+
+const getSvgPathFromFixedFreeDrawPoints = (
+  points: ReadonlyArray<readonly number[]>,
+): string => {
+  const len = points.length;
+
+  if (len < 2) {
+    return "";
+  }
+
+  if (len === 2) {
+    return `M${roundPoint(points[0])}L${roundPoint(points[1])}`;
+  }
+
+  let path = `M${roundPoint(points[0])}`;
+
+  for (let index = 1; index < len - 1; index++) {
+    const previousPoint = points[index - 1];
+    const currentPoint = points[index];
+    const nextPoint = points[index + 1];
+
+    path += shouldSmoothFixedFreeDrawPoint(
+      previousPoint,
+      currentPoint,
+      nextPoint,
+    )
+      ? `Q${roundPoint(currentPoint)}${averagePoint(currentPoint, nextPoint)}`
+      : `L${roundPoint(currentPoint)}`;
+  }
+
+  return `${path}L${roundPoint(points[len - 1])}`;
+};
+
+const getSvgPathFromStroke = (
+  points: ReadonlyArray<readonly number[]>,
+): string => {
   if (!points.length) {
     return "";
   }

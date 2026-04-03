@@ -28,6 +28,7 @@ import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 import type { TransformHandleType } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
+  ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   ExcalidrawArrowElement,
@@ -432,8 +433,10 @@ type DrawingToolName = Exclude<
   "lock" | "selection" | "eraser" | "lasso"
 >;
 
-type Element<T extends DrawingToolName> = T extends "line" | "freedraw"
+type Element<T extends DrawingToolName> = T extends "line"
   ? ExcalidrawLinearElement
+  : T extends "freedraw"
+  ? ExcalidrawFreeDrawElement
   : T extends "arrow"
   ? ExcalidrawArrowElement
   : T extends "text"

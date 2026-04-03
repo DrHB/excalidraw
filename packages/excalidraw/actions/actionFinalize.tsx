@@ -2,6 +2,7 @@ import { pointFrom } from "@excalidraw/math";
 
 import { bindOrUnbindBindingElement } from "@excalidraw/element/binding";
 import {
+  isLoopFreeDrawElement,
   isValidPolygon,
   LinearElementEditor,
   newElementWith,
@@ -242,7 +243,11 @@ export const actionFinalize = register<FormData>({
         // If the multi point line closes the loop,
         // set the last point to first point.
         // This ensures that loop remains closed at different scales.
-        const isLoop = isPathALoop(element.points, appState.zoom.value);
+        const isLoop = isLineElement(element)
+          ? isPathALoop(element.points, appState.zoom.value)
+          : isFreeDrawElement(element)
+          ? isLoopFreeDrawElement(element, appState.zoom.value)
+          : false;
 
         if (isLoop && (isLineElement(element) || isFreeDrawElement(element))) {
           const linePoints = element.points;

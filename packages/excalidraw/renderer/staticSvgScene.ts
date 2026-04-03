@@ -376,6 +376,11 @@ const renderElementToSvg = (
     }
     case "freedraw": {
       const wrapper = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
+      const isFixedStroke = element.strokeShape === "fixed";
+      const strokeColor =
+        renderConfig.theme === THEME.DARK
+          ? applyDarkModeFilter(element.strokeColor)
+          : element.strokeColor;
 
       const shapes = ShapeCache.generateElementShape(element, renderConfig);
       // always ordered as [background, stroke]
@@ -384,12 +389,15 @@ const renderElementToSvg = (
           // stroke (SVGPathString)
 
           const path = svgRoot.ownerDocument.createElementNS(SVG_NS, "path");
-          path.setAttribute(
-            "fill",
-            renderConfig.theme === THEME.DARK
-              ? applyDarkModeFilter(element.strokeColor)
-              : element.strokeColor,
-          );
+          if (isFixedStroke) {
+            path.setAttribute("fill", "none");
+            path.setAttribute("stroke", strokeColor);
+            path.setAttribute("stroke-width", `${element.strokeWidth}`);
+            path.setAttribute("stroke-linecap", "round");
+            path.setAttribute("stroke-linejoin", "round");
+          } else {
+            path.setAttribute("fill", strokeColor);
+          }
           path.setAttribute("d", shape);
           wrapper.appendChild(path);
         } else {

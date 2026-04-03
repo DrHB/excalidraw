@@ -1,4 +1,5 @@
 import {
+  DEFAULT_FREE_DRAW_STROKE_SHAPE,
   DEFAULT_FONT_SIZE,
   DEFAULT_FONT_FAMILY,
   DEFAULT_TEXT_ALIGN,
@@ -10,6 +11,7 @@ import {
 import { newElementWith } from "@excalidraw/element";
 
 import {
+  isFreeDrawElement,
   hasBoundTextElement,
   canApplyRoundnessTypeToElement,
   getDefaultRoundnessTypeForElement,
@@ -18,6 +20,7 @@ import {
   isExcalidrawElement,
   isTextElement,
 } from "@excalidraw/element";
+import { newFreeDrawElementWithStrokeShape } from "@excalidraw/element";
 
 import {
   getBoundTextElement,
@@ -152,6 +155,17 @@ export const actionPasteStyles = register({
               startArrowhead: elementStylesToCopyFrom.startArrowhead,
               endArrowhead: elementStylesToCopyFrom.endArrowhead,
             });
+          }
+
+          if (
+            isFreeDrawElement(newElement) &&
+            isFreeDrawElement(elementStylesToCopyFrom)
+          ) {
+            newElement = newFreeDrawElementWithStrokeShape(
+              newElement,
+              elementStylesToCopyFrom.strokeShape ??
+                DEFAULT_FREE_DRAW_STROKE_SHAPE,
+            );
           }
 
           if (isFrameLikeElement(element)) {

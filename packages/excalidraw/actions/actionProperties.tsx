@@ -3,6 +3,7 @@ import { pointFrom } from "@excalidraw/math";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  DEFAULT_FREE_DRAW_STROKE_SHAPE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
@@ -36,6 +37,7 @@ import {
 import { LinearElementEditor } from "@excalidraw/element";
 
 import { newElementWith } from "@excalidraw/element";
+import { newFreeDrawElementWithStrokeShape } from "@excalidraw/element";
 import { getArrowheadForPicker } from "@excalidraw/element";
 
 import {
@@ -47,6 +49,7 @@ import {
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
+  isFreeDrawElement,
   isLinearElement,
   isLineElement,
   isTextElement,
@@ -70,6 +73,7 @@ import type {
   ElementsMap,
   ExcalidrawBindableElement,
   ExcalidrawElement,
+  ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
   ExcalidrawTextElement,
   FontFamilyValues,
@@ -105,8 +109,11 @@ import {
   SloppinessArtistIcon,
   SloppinessCartoonistIcon,
   StrokeWidthBaseIcon,
+  StrokeWidthMediumIcon,
   StrokeWidthBoldIcon,
   StrokeWidthExtraBoldIcon,
+  StrokeShapeFixedIcon,
+  StrokeShapeVariableIcon,
   FontSizeSmallIcon,
   FontSizeMediumIcon,
   FontSizeLargeIcon,
@@ -185,6 +192,29 @@ export const changeProperty = (
     }
     return element;
   });
+};
+
+const getFreeDrawStrokeShape = (item: {
+  strokeShape?: ExcalidrawFreeDrawElement["strokeShape"];
+  currentItemStrokeShape?: AppState["currentItemStrokeShape"];
+}) =>
+  item.strokeShape ??
+  item.currentItemStrokeShape ??
+  DEFAULT_FREE_DRAW_STROKE_SHAPE;
+
+const getAppStateWithCurrentItemStrokeShape = (
+  appState: AppState,
+  strokeShape: NonNullable<ExcalidrawFreeDrawElement["strokeShape"]>,
+) => {
+  // if (strokeShape === DEFAULT_FREE_DRAW_STROKE_SHAPE) {
+  //   const { currentItemStrokeShape, ...nextAppState } = appState;
+  //   return nextAppState;
+  // }
+
+  return {
+    ...appState,
+    currentItemStrokeShape: strokeShape,
+  };
 };
 
 export const getFormValue = function <T extends Primitive>(
@@ -575,6 +605,12 @@ export const actionChangeStrokeWidth = register<
               testId: "strokeWidth-thin",
             },
             {
+              value: STROKE_WIDTH.medium,
+              text: t("labels.medium"),
+              icon: StrokeWidthMediumIcon,
+              testId: "strokeWidth-medium",
+            },
+            {
               value: STROKE_WIDTH.bold,
               text: t("labels.bold"),
               icon: StrokeWidthBoldIcon,
@@ -594,6 +630,60 @@ export const actionChangeStrokeWidth = register<
             (element) => element.hasOwnProperty("strokeWidth"),
             (hasSelection) =>
               hasSelection ? null : appState.currentItemStrokeWidth,
+          )}
+          onChange={(value) => updateData(value)}
+        />
+      </div>
+    </fieldset>
+  ),
+});
+
+export const actionChangeStrokeShape = register<
+  NonNullable<ExcalidrawFreeDrawElement["strokeShape"]>
+>({
+  name: "changeStrokeShape",
+  label: "labels.strokeShape",
+  trackEvent: false,
+  perform: (elements, appState, value) => {
+    invariant(value, "actionChangeStrokeShape: value must be defined");
+    return {
+      elements: changeProperty(elements, appState, (el) =>
+        isFreeDrawElement(el)
+          ? newFreeDrawElementWithStrokeShape(el, value)
+          : el,
+      ),
+      appState: getAppStateWithCurrentItemStrokeShape(appState, value),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
+  },
+  PanelComponent: ({ elements, appState, updateData, app }) => (
+    <fieldset>
+      <legend>{t("labels.strokeShape")}</legend>
+      <div className="buttonList">
+        <RadioSelection
+          group="stroke-shape"
+          options={[
+            {
+              value: "variable",
+              text: t("labels.strokeShape_variable"),
+              icon: StrokeShapeVariableIcon,
+              testId: "strokeShape-variable",
+            },
+            {
+              value: "fixed",
+              text: t("labels.strokeShape_fixed"),
+              icon: StrokeShapeFixedIcon,
+              testId: "strokeShape-fixed",
+            },
+          ]}
+          value={getFormValue(
+            elements,
+            app,
+            (element) =>
+              getFreeDrawStrokeShape(element as ExcalidrawFreeDrawElement),
+            isFreeDrawElement,
+            (hasSelection) =>
+              hasSelection ? null : getFreeDrawStrokeShape(appState),
           )}
           onChange={(value) => updateData(value)}
         />

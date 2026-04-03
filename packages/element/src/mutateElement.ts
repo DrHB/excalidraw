@@ -1,4 +1,5 @@
 import {
+  DEFAULT_FREE_DRAW_STROKE_SHAPE,
   getSizeFromPoints,
   randomInteger,
   getUpdatedTimestamp,
@@ -18,6 +19,8 @@ import type {
   ElementsMap,
   ExcalidrawElbowArrowElement,
   ExcalidrawElement,
+  ExcalidrawFreeDrawElement,
+  FreeDrawStrokeShape,
   NonDeletedSceneElementsMap,
 } from "./types";
 
@@ -175,6 +178,30 @@ export const newElementWith = <TElement extends ExcalidrawElement>(
     versionNonce: updates.versionNonce ?? randomInteger(),
     updated: getUpdatedTimestamp(),
   };
+};
+
+export const newFreeDrawElementWithStrokeShape = <
+  TElement extends ExcalidrawFreeDrawElement,
+>(
+  element: TElement,
+  strokeShape: FreeDrawStrokeShape,
+): TElement => {
+  if (strokeShape === DEFAULT_FREE_DRAW_STROKE_SHAPE) {
+    if (!("strokeShape" in element)) {
+      return element;
+    }
+    const nextElement = newElementWith(
+      element,
+      {} as ElementUpdate<TElement>,
+      true,
+    );
+    delete (nextElement as Mutable<Partial<TElement>>).strokeShape;
+    return nextElement;
+  }
+
+  return newElementWith(element, {
+    strokeShape,
+  } as ElementUpdate<TElement>);
 };
 
 /**

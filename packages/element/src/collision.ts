@@ -27,6 +27,7 @@ import type {
 
 import type { FrameNameBounds } from "@excalidraw/excalidraw/types";
 
+import { isLoopFreeDrawElement } from "./freedraw";
 import { isPathALoop } from "./utils";
 import {
   doBoundsIntersect,
@@ -93,7 +94,7 @@ export const shouldTestInside = (element: ExcalidrawElement) => {
   }
 
   if (element.type === "freedraw") {
-    return isDraggableFromInside && isPathALoop(element.points);
+    return isDraggableFromInside && isLoopFreeDrawElement(element);
   }
 
   return isDraggableFromInside || isImageElement(element);
@@ -754,8 +755,8 @@ export const isPointInElement = (
   elementsMap: ElementsMap,
 ) => {
   if (
-    (isLinearElement(element) || isFreeDrawElement(element)) &&
-    !isPathALoop(element.points)
+    (isLinearElement(element) && !isPathALoop(element.points)) ||
+    (isFreeDrawElement(element) && !isLoopFreeDrawElement(element))
   ) {
     // There isn't any "inside" for a non-looping path
     return false;

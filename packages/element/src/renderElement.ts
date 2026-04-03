@@ -417,16 +417,27 @@ const drawElementOnCanvas = (
     case "freedraw": {
       // Draw directly to canvas
       context.save();
+      context.lineJoin = "round";
+      context.lineCap = "round";
 
       const shapes = ShapeCache.generateElementShape(element, renderConfig);
+      const isFixedStroke = element.strokeShape === "fixed";
 
       for (const shape of shapes) {
         if (typeof shape === "string") {
-          context.fillStyle =
+          const strokeColor =
             renderConfig.theme === THEME.DARK
               ? applyDarkModeFilter(element.strokeColor)
               : element.strokeColor;
-          context.fill(new Path2D(shape));
+
+          if (isFixedStroke) {
+            context.strokeStyle = strokeColor;
+            context.lineWidth = element.strokeWidth;
+            context.stroke(new Path2D(shape));
+          } else {
+            context.fillStyle = strokeColor;
+            context.fill(new Path2D(shape));
+          }
         } else {
           rc.draw(shape);
         }
