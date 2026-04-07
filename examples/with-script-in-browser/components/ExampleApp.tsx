@@ -821,6 +821,48 @@ export default function ExampleApp({
             Export with embed scene
           </label>
           <button
+            type="button"
+            onClick={() => {
+              if (!excalidrawAPI) {
+                return;
+              }
+
+              const elements = excalidrawAPI.getSceneElements();
+              excalidrawAPI.scrollToContent(elements[0], {
+                animate: true,
+                fitToViewport: true,
+                viewportZoomFactor: 0.9,
+                scrollLock: {
+                  lockZoom: true,
+                  overscrollAllowance: 0,
+                },
+              });
+            }}
+          >
+            Fit and lock first element
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!excalidrawAPI) {
+                return;
+              }
+
+              const elements = excalidrawAPI.getSceneElements();
+              excalidrawAPI.scrollToContent(elements[1], {
+                animate: true,
+                fitToViewport: true,
+                viewportZoomFactor: 0.9,
+                scrollLock: {
+                  lockZoom: true,
+                  overscrollAllowance: 0,
+                },
+              });
+            }}
+          >
+            Fit and lock second element
+          </button>
+          <button
             onClick={async () => {
               if (!excalidrawAPI) {
                 return;
