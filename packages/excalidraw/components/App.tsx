@@ -239,9 +239,7 @@ import {
   hitElementBoundingBox,
   isLineElement,
   isSimpleArrow,
-  StoreChange,
   StoreDelta,
-  StoreSnapshot,
   type ApplyToOptions,
   positionElementsOnGrid,
   calculateFixedPointForNonElbowArrowBinding,
@@ -363,7 +361,7 @@ import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
 import { History } from "../history";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
-import { TransactionManager } from "../transaction/manager";
+import { TransactionManager } from "../transaction";
 
 import {
   calculateScrollCenter,
@@ -491,7 +489,6 @@ import type {
   CollaboratorPointer,
   ToolType,
   OnUserFollowedPayload,
-  ObservedAppState,
   UnsubscribeCallback,
   EmbedsValidationStatus,
   ElementsPendingErasure,
@@ -642,7 +639,7 @@ class App extends React.Component<AppProps, AppState> {
   public libraryItemsFromStorage: LibraryItems | undefined;
   public id: string;
   public transactionManager: TransactionManager;
-  private store: Store;
+  public store: Store;
   private history: History;
   public excalidrawContainerValue: {
     container: HTMLDivElement | null;
@@ -4608,57 +4605,9 @@ class App extends React.Component<AppProps, AppState> {
     );
   };
 
-  /**
-   * Records a synthetic durable history entry without changing the live scene.
-   * Useful for batching external streams into a single undoable entry after
-   * their visual state has already been applied with NEVER.
-   *
-   * appState patches are merged on top of the current observed appState
-   * baseline. This keeps unspecified observed fields stable while only the
-   * provided appState keys participate in the synthetic before/after diff.
-   */
-  public commitSyntheticHistoryEntry = (params: {
-    logicalBefore: SceneElementsMap;
-    logicalAfter: SceneElementsMap;
-    appStateBefore?: Partial<ObservedAppState>;
-    appStateAfter?: Partial<ObservedAppState>;
-  }): boolean => {
-    const { logicalBefore, logicalAfter, appStateBefore, appStateAfter } =
-      params;
-    const observedAppStateBaseline = this.store.snapshot.appState;
-    const syntheticAppStateBefore = appStateBefore
-      ? { ...observedAppStateBaseline, ...appStateBefore }
-      : observedAppStateBaseline;
-    const syntheticAppStateAfter = appStateAfter
-      ? { ...observedAppStateBaseline, ...appStateAfter }
-      : observedAppStateBaseline;
-    const didAppStateChange = Boolean(appStateBefore || appStateAfter);
-    const prevSnapshot = StoreSnapshot.create(
-      logicalBefore,
-      syntheticAppStateBefore,
-      {
-        didElementsChange: true,
-        didAppStateChange,
-      },
-    );
-    const nextSnapshot = StoreSnapshot.create(
-      logicalAfter,
-      syntheticAppStateAfter,
-      {
-        didElementsChange: true,
-        didAppStateChange,
-      },
-    );
-    const change = StoreChange.create(prevSnapshot, nextSnapshot);
-    const delta = StoreDelta.calculate(prevSnapshot, nextSnapshot);
-
-    if (delta.isEmpty()) {
-      return false;
-    }
-
-    this.store.enqueueIsolatedIncrement({ change, delta });
-
-    return true;
+  /** Creates a new transaction for batching mutations into a single undo entry. */
+  public createTransaction: TransactionManager["create"] = (options) => {
+    return this.transactionManager.create(options);
   };
 
   public mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
