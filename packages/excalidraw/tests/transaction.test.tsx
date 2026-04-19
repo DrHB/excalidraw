@@ -574,4 +574,97 @@ describe("createTransaction", () => {
       expect(live.x).toBe(element.x);
     });
   });
+
+  it("transaction commit time not affected by tx creation time", async () => {
+    const element = API.createElement({
+      type: "rectangle",
+      id: "shared",
+      strokeColor: "#000",
+    });
+    setSceneBaseline([element]);
+
+    const tx = h.app.createTransaction();
+
+    applyElementUpdate(element.id, { strokeColor: "#f0f" }, "IMMEDIATELY");
+    expect(getElement(element.id)!.strokeColor).toBe("#f0f");
+
+    act(() => {
+      tx.updateScene({
+        elements: h.app.scene.getElementsIncludingDeleted().map((el) =>
+          el.id === element.id
+            ? newElementWith(el, {
+                strokeColor: "#f00",
+              })
+            : el,
+        ),
+      });
+    });
+
+    commitTransaction(tx);
+    expect(getElement(element.id)!.strokeColor).toBe("#f00");
+
+    Keyboard.undo();
+    expect(getElement(element.id)!.strokeColor).toBe("#f0f");
+
+    Keyboard.undo();
+    expect(getElement(element.id)!.strokeColor).toBe(element.strokeColor);
+  });
+
+  it.only("keeps same-element same-property user edits separated from transaction rollback", async () => {
+    const element = API.createElement({
+      type: "rectangle",
+      id: "shared",
+      x: 0,
+      y: 0,
+      strokeColor: "#000",
+      backgroundColor: "#fff",
+    });
+    setSceneBaseline([element]);
+    expect(API.getUndoStack().length).toBe(0);
+
+    const tx = h.app.createTransaction();
+
+    act(() => {
+      tx.updateScene({
+        elements: h.app.scene.getElementsIncludingDeleted().map((el) =>
+          el.id === element.id
+            ? newElementWith(el, {
+                strokeColor: "#f00",
+                x: 200,
+              })
+            : el,
+        ),
+      });
+    });
+
+    // conflicting regular edit
+    applyElementUpdate(element.id, { strokeColor: "#f0f" }, "IMMEDIATELY");
+
+    commitTransaction(tx);
+    expect(API.getUndoStack().length).toBe(2);
+
+    let live = getElement(element.id)!;
+    // tx merge strategy for conflicting edits should prefer live values
+    expect(live.strokeColor).toBe("#f0f");
+    expect(live.x).toBe(200);
+    expect(live.backgroundColor).toBe("#fff");
+
+    // Undo transaction
+    Keyboard.undo();
+    live = getElement(element.id)!;
+    // strokeColor is unchanged because the transaction itself didn't end up
+    // touching it (it kept the current live value)
+    expect(live.strokeColor).toBe("#f0f");
+    // but the x value should be reverted to pre-transaction value
+    expect(live.x).toBe(0);
+    expect(live.backgroundColor).toBe("#fff");
+
+    // Undo regular edit
+    Keyboard.undo();
+    live = getElement(element.id)!;
+    // FIXME should revert to original strokeColor
+    expect(live.strokeColor).toBe("#000");
+    expect(live.x).toBe(0);
+    expect(live.backgroundColor).toBe("#fff");
+  });
 });
