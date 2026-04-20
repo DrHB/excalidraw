@@ -3111,7 +3111,7 @@ class App extends React.Component<AppProps, AppState> {
           const api = await import("@excalidraw/mermaid-to-excalidraw");
 
           try {
-            const { elements: skeletonElements, files } =
+            const { elements: skeletonElements, files = {} } =
               await api.parseMermaidToExcalidraw(data.text);
 
             const elements = convertToExcalidrawElements(skeletonElements, {

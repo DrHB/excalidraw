@@ -80,7 +80,7 @@ export const convertMermaidToExcalidraw = async ({
         mermaidDefinition.replace(/"/g, "'"),
       );
     }
-    const { elements, files } = ret;
+    const { elements, files = {} } = ret;
     setError(null);
 
     data.current = {
