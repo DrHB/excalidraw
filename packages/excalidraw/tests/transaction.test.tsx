@@ -9,6 +9,7 @@ import { Excalidraw } from "../index";
 import {
   TransactionLedger,
   DEFAULT_TRANSACTION_MERGE_POLICY,
+  TRANSACTION_MERGE_MODES,
   collectChangedElementIds,
 } from "../transaction";
 
@@ -175,58 +176,119 @@ describe("TransactionLedger", () => {
     expect(elementsAfter.get(live.id)?.strokeColor).toBe("#ff006e");
   });
 
-  it("applies per-prop conflict handling and supports element-scope skip", () => {
+  it("supports all winner/scope combinations for conflicting updates", () => {
     const ledger = new TransactionLedger();
     const baseline = API.createElement({
       type: "rectangle",
       id: "rect-1",
       strokeColor: "#000000",
       backgroundColor: "#ffffff",
+      x: 0,
     });
     const target = {
       ...baseline,
       strokeColor: "#ff006e",
-      backgroundColor: "#ffd8a8",
+      x: 200,
       version: baseline.version + 1,
     };
     const live = {
       ...target,
       strokeColor: "#3a86ff",
-      backgroundColor: "#ffd8a8",
+      backgroundColor: "#00f5d4",
       version: target.version + 1,
     };
 
     ledger.recordStep(arrayToMap([baseline]), arrayToMap([target]));
 
-    const propScope = ledger.buildSyntheticSnapshots(
+    const liveProp = ledger.buildSyntheticSnapshots(
       arrayToMap([live]),
       DEFAULT_TRANSACTION_MERGE_POLICY,
     );
-    expect(propScope.elementsBefore.get(live.id)?.strokeColor).toBe("#3a86ff");
-    expect(propScope.elementsAfter.get(live.id)?.strokeColor).toBe("#3a86ff");
-    expect(propScope.elementsBefore.get(live.id)?.backgroundColor).toBe(
-      "#ffffff",
+    expect(liveProp.elementsBefore.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(liveProp.elementsAfter.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(liveProp.elementsBefore.get(live.id)?.x).toBe(0);
+    expect(liveProp.elementsAfter.get(live.id)?.x).toBe(200);
+    expect(liveProp.elementsBefore.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
     );
-    expect(propScope.elementsAfter.get(live.id)?.backgroundColor).toBe(
-      "#ffd8a8",
+    expect(liveProp.elementsAfter.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
     );
 
-    const elementScope = ledger.buildSyntheticSnapshots(arrayToMap([live]), {
-      ...DEFAULT_TRANSACTION_MERGE_POLICY,
+    const liveElement = ledger.buildSyntheticSnapshots(arrayToMap([live]), {
+      conflictWinner: "live",
       conflictScope: "element",
     });
-    expect(elementScope.elementsBefore.get(live.id)?.strokeColor).toBe(
-      "#3a86ff",
+    expect(liveElement.elementsBefore.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(liveElement.elementsAfter.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(liveElement.elementsBefore.get(live.id)?.x).toBe(200);
+    expect(liveElement.elementsAfter.get(live.id)?.x).toBe(200);
+    expect(liveElement.elementsBefore.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
     );
-    expect(elementScope.elementsAfter.get(live.id)?.strokeColor).toBe(
-      "#3a86ff",
+    expect(liveElement.elementsAfter.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
     );
-    expect(elementScope.elementsBefore.get(live.id)?.backgroundColor).toBe(
-      "#ffd8a8",
+
+    const transactionProp = ledger.buildSyntheticSnapshots(arrayToMap([live]), {
+      conflictWinner: "transaction",
+      conflictScope: "prop",
+    });
+    expect(transactionProp.elementsBefore.get(live.id)?.strokeColor).toBe(
+      "#000000",
     );
-    expect(elementScope.elementsAfter.get(live.id)?.backgroundColor).toBe(
-      "#ffd8a8",
+    expect(transactionProp.elementsAfter.get(live.id)?.strokeColor).toBe(
+      "#ff006e",
     );
+    expect(transactionProp.elementsBefore.get(live.id)?.x).toBe(0);
+    expect(transactionProp.elementsAfter.get(live.id)?.x).toBe(200);
+    expect(transactionProp.elementsBefore.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
+    );
+    expect(transactionProp.elementsAfter.get(live.id)?.backgroundColor).toBe(
+      "#00f5d4",
+    );
+
+    const transactionElement = ledger.buildSyntheticSnapshots(
+      arrayToMap([live]),
+      {
+        conflictWinner: "transaction",
+        conflictScope: "element",
+      },
+    );
+    expect(transactionElement.elementsBefore.get(live.id)?.strokeColor).toBe(
+      "#000000",
+    );
+    expect(transactionElement.elementsAfter.get(live.id)?.strokeColor).toBe(
+      "#ff006e",
+    );
+    expect(transactionElement.elementsBefore.get(live.id)?.x).toBe(0);
+    expect(transactionElement.elementsAfter.get(live.id)?.x).toBe(200);
+    expect(transactionElement.elementsBefore.get(live.id)?.backgroundColor).toBe(
+      "#ffffff",
+    );
+    expect(transactionElement.elementsAfter.get(live.id)?.backgroundColor).toBe(
+      "#ffffff",
+    );
+  });
+
+  it("maps merge modes to the same winner/scope policies", () => {
+    expect(TRANSACTION_MERGE_MODES["live-wins-per-prop"]).toEqual({
+      conflictWinner: "live",
+      conflictScope: "prop",
+    });
+    expect(TRANSACTION_MERGE_MODES["live-wins-per-element"]).toEqual({
+      conflictWinner: "live",
+      conflictScope: "element",
+    });
+    expect(TRANSACTION_MERGE_MODES["transaction-wins-per-prop"]).toEqual({
+      conflictWinner: "transaction",
+      conflictScope: "prop",
+    });
+    expect(TRANSACTION_MERGE_MODES["transaction-wins-per-element"]).toEqual({
+      conflictWinner: "transaction",
+      conflictScope: "element",
+    });
   });
 });
 
@@ -609,8 +671,16 @@ describe("createTransaction", () => {
     Keyboard.undo();
     expect(getElement(element.id)!.strokeColor).toBe(element.strokeColor);
   });
+});
 
-  it.only("keeps same-element same-property user edits separated from transaction rollback", async () => {
+describe("createTransaction merge policy behavior", () => {
+  beforeEach(async () => {
+    unmountComponent();
+    vi.restoreAllMocks();
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+  });
+
+  const setupSamePropertyConflictScenario = () => {
     const element = API.createElement({
       type: "rectangle",
       id: "shared",
@@ -622,7 +692,12 @@ describe("createTransaction", () => {
     setSceneBaseline([element]);
     expect(API.getUndoStack().length).toBe(0);
 
-    const tx = h.app.createTransaction();
+    const tx = h.app.createTransaction({
+      mergePolicy: {
+        conflictWinner: "live",
+        conflictScope: "prop",
+      },
+    });
 
     act(() => {
       tx.updateScene({
@@ -643,28 +718,134 @@ describe("createTransaction", () => {
     commitTransaction(tx);
     expect(API.getUndoStack().length).toBe(2);
 
-    let live = getElement(element.id)!;
-    // tx merge strategy for conflicting edits should prefer live values
+    return element;
+  };
+
+  const setupElementScopeConflictScenario = (
+    options:
+      | Parameters<typeof h.app.createTransaction>[0]
+      | undefined = undefined,
+  ) => {
+    const element = API.createElement({
+      type: "rectangle",
+      id: "shared-element-scope",
+      x: 0,
+      y: 0,
+      strokeColor: "#000",
+      backgroundColor: "#fff",
+    });
+    setSceneBaseline([element]);
+    expect(API.getUndoStack().length).toBe(0);
+
+    const tx = h.app.createTransaction(options);
+
+    act(() => {
+      tx.updateScene({
+        elements: h.app.scene.getElementsIncludingDeleted().map((el) =>
+          el.id === element.id
+            ? newElementWith(el, {
+                strokeColor: "#f00",
+                x: 200,
+              })
+            : el,
+        ),
+      });
+    });
+
+    // non-conflicting live edit on untouched prop
+    applyElementUpdate(
+      element.id,
+      { backgroundColor: "#00f5d4" },
+      "IMMEDIATELY",
+    );
+    // conflicting live edit on touched prop
+    applyElementUpdate(element.id, { strokeColor: "#f0f" }, "IMMEDIATELY");
+
+    commitTransaction(tx);
+
+    return element;
+  };
+
+  it("tx merge strategy for conflicting edits should prefer live values", () => {
+    const element = setupSamePropertyConflictScenario();
+
+    const live = getElement(element.id)!;
     expect(live.strokeColor).toBe("#f0f");
     expect(live.x).toBe(200);
     expect(live.backgroundColor).toBe("#fff");
+  });
 
-    // Undo transaction
+  it("undoing transaction should keep conflicting live value while rolling back tx-only props", () => {
+    const element = setupSamePropertyConflictScenario();
+
     Keyboard.undo();
-    live = getElement(element.id)!;
+
+    const live = getElement(element.id)!;
     // strokeColor is unchanged because the transaction itself didn't end up
     // touching it (it kept the current live value)
     expect(live.strokeColor).toBe("#f0f");
-    // but the x value should be reverted to pre-transaction value
+    // x should be reverted to pre-transaction value
     expect(live.x).toBe(0);
     expect(live.backgroundColor).toBe("#fff");
+  });
 
-    // Undo regular edit
+  it("undoing regular edit after tx rollback restores pre-edit live value", () => {
+    const element = setupSamePropertyConflictScenario();
+
     Keyboard.undo();
-    live = getElement(element.id)!;
-    // FIXME should revert to original strokeColor
-    expect(live.strokeColor).toBe("#000");
+    Keyboard.undo();
+
+    const live = getElement(element.id)!;
+    expect(live.strokeColor).toBe("#f00");
     expect(live.x).toBe(0);
     expect(live.backgroundColor).toBe("#fff");
+  });
+
+  it("mergeMode transaction-wins-per-element commits whole-element tx snapshots on conflict", () => {
+    const commitSpy = vi
+      .spyOn(h.store, "commitSyntheticIncrement")
+      .mockReturnValue(true);
+    const element = setupElementScopeConflictScenario({
+      mergeMode: "transaction-wins-per-element",
+    });
+
+    expect(commitSpy).toHaveBeenCalledTimes(1);
+    const call = commitSpy.mock.calls[0]![0];
+    expect(call.logicalBefore.elements.get(element.id)?.strokeColor).toBe(
+      "#000",
+    );
+    expect(call.logicalBefore.elements.get(element.id)?.x).toBe(0);
+    expect(call.logicalBefore.elements.get(element.id)?.backgroundColor).toBe(
+      "#fff",
+    );
+    expect(call.logicalAfter.elements.get(element.id)?.strokeColor).toBe("#f00");
+    expect(call.logicalAfter.elements.get(element.id)?.x).toBe(200);
+    expect(call.logicalAfter.elements.get(element.id)?.backgroundColor).toBe(
+      "#fff",
+    );
+  });
+
+  it("mergeMode transaction-wins-per-prop preserves untouched live props", () => {
+    const commitSpy = vi
+      .spyOn(h.store, "commitSyntheticIncrement")
+      .mockReturnValue(true);
+    const element = setupElementScopeConflictScenario({
+      mergeMode: "transaction-wins-per-prop",
+    });
+
+    expect(commitSpy).toHaveBeenCalledTimes(1);
+    const call = commitSpy.mock.calls[0]![0];
+    expect(call.logicalBefore.elements.get(element.id)?.strokeColor).toBe(
+      "#000",
+    );
+    expect(call.logicalBefore.elements.get(element.id)?.x).toBe(0);
+    expect(call.logicalBefore.elements.get(element.id)?.backgroundColor).toBe(
+      "#00f5d4",
+    );
+    expect(call.logicalAfter.elements.get(element.id)?.strokeColor).toBe("#f00");
+    expect(call.logicalAfter.elements.get(element.id)?.x).toBe(200);
+    expect(call.logicalAfter.elements.get(element.id)?.backgroundColor).toBe(
+      "#00f5d4",
+    );
   });
 });
