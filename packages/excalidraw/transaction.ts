@@ -1,5 +1,11 @@
 import { randomId } from "@excalidraw/common";
-import { CaptureUpdateAction, deepCopyElement } from "@excalidraw/element";
+import {
+  CaptureUpdateAction,
+  deepCopyElement,
+  newElementWith,
+} from "@excalidraw/element";
+
+import type { ElementUpdate } from "@excalidraw/element";
 
 import type { Mutable } from "@excalidraw/common/utility-types";
 import type {
@@ -14,79 +20,6 @@ import type {
   ObservedAppState,
   SceneData,
 } from "./types";
-
-// ---------------------------------------------------------------------------
-// Ledger types
-// ---------------------------------------------------------------------------
-
-/**
- * Which side wins when transaction output and live scene diverge.
- *
- * - "live": keep what users currently see in the canvas for conflicting changes.
- * - "transaction": force transaction changes for conflicting changes.
- */
-export type ConflictWinner = "live" | "transaction";
-
-/**
- * Conflict granularity used by the merge policy.
- *
- * - "prop": resolve each touched property independently.
- * - "element": when any touched property conflicts, resolve at whole-element level.
- */
-export type ConflictScope = "prop" | "element";
-
-/**
- * Merge policy used when building synthetic before/after snapshots.
- *
- * Four meaningful combinations are supported:
- * - live + prop: keep live only for conflicting props, still apply non-conflicting tx props.
- * - live + element: if any touched prop conflicts, skip the whole element update.
- * - transaction + prop: force tx values for conflicting props, keep untouched live props.
- * - transaction + element: if any touched prop conflicts, force the whole tx element.
- */
-export type TransactionMergePolicy = {
-  conflictWinner: ConflictWinner;
-  conflictScope: ConflictScope;
-};
-
-/**
- * Named merge presets for clearer call-sites.
- *
- * These names are intentionally explicit to avoid ambiguity around
- * winner/scope semantics.
- */
-export type TransactionMergeMode =
-  | "live-wins-per-prop"
-  | "live-wins-per-element"
-  | "transaction-wins-per-prop"
-  | "transaction-wins-per-element";
-
-export const DEFAULT_TRANSACTION_MERGE_POLICY: TransactionMergePolicy = {
-  conflictWinner: "live",
-  conflictScope: "prop",
-};
-
-export const TRANSACTION_MERGE_MODES: Record<
-  TransactionMergeMode,
-  TransactionMergePolicy
-> = {
-  "live-wins-per-prop": {
-    conflictWinner: "live",
-    conflictScope: "prop",
-  },
-  "live-wins-per-element": {
-    conflictWinner: "live",
-    conflictScope: "element",
-  },
-  "transaction-wins-per-prop": {
-    conflictWinner: "transaction",
-    conflictScope: "prop",
-  },
-  "transaction-wins-per-element": {
-    conflictWinner: "transaction",
-    conflictScope: "element",
-  },
-};
 
 /** Per-element ledger record captured during a transaction session. */
 export type TransactionLedgerEntry = {
@@ -214,60 +147,6 @@ export const collectChangedElementIds = (
   return [...changedIds];
 };
 
-/** Detects if an updated element has any live-vs-target conflict on touched props. */
-const hasTouchedPropConflict = (
-  entry: TransactionLedgerEntry,
-  liveElement: ExcalidrawElement,
-  targetElement: ExcalidrawElement,
-) => {
-  for (const prop of entry.touchedProps) {
-    const liveValue = getElementProp(liveElement, prop);
-    const targetValue = getElementProp(targetElement, prop);
-    if (!isLedgerValueEqual(liveValue, targetValue)) {
-      return true;
-    }
-  }
-  return false;
-};
-
-export type TransactionCreateOptions =
-  | {
-      mergeMode?: TransactionMergeMode;
-      mergePolicy?: never;
-    }
-  | {
-      mergeMode?: never;
-      mergePolicy?: Partial<TransactionMergePolicy>;
-    };
-
-const resolveTransactionMergePolicy = (
-  options?: TransactionCreateOptions,
-): TransactionMergePolicy => {
-  if (!options) {
-    return DEFAULT_TRANSACTION_MERGE_POLICY;
-  }
-
-  // Runtime guard for untyped callers.
-  if ("mergeMode" in options && "mergePolicy" in options) {
-    if (options.mergeMode && options.mergePolicy) {
-      throw new Error(
-        "Transaction options are ambiguous: pass either mergeMode or mergePolicy, not both.",
-      );
-    }
-  }
-
-  if ("mergeMode" in options && options.mergeMode) {
-    return TRANSACTION_MERGE_MODES[options.mergeMode];
-  }
-
-  const partialPolicy =
-    "mergePolicy" in options ? options.mergePolicy : undefined;
-  return {
-    ...DEFAULT_TRANSACTION_MERGE_POLICY,
-    ...partialPolicy,
-  };
-};
-
 // ---------------------------------------------------------------------------
 // TransactionLedger
 // ---------------------------------------------------------------------------
@@ -338,13 +217,10 @@ export class TransactionLedger {
   }
 
   /**
-   * Builds synthetic element before/after snapshots by reconciling transaction
-   * targets with current live scene state under the selected merge policy.
+   * Builds synthetic element before/after snapshots with a fixed
+   * "live-wins-per-prop" strategy.
    */
-  buildSyntheticSnapshots(
-    live: ReadonlyMap<string, ExcalidrawElement>,
-    mergePolicy: TransactionMergePolicy,
-  ) {
+  buildSyntheticSnapshots(live: ReadonlyMap<string, ExcalidrawElement>) {
     // Shallow copy — untouched elements stay as live references.
     // Only elements mutated in-place (prop-level updates) are deep-copied below.
     const elementsBefore = shallowCopySceneMap(live);
@@ -358,10 +234,9 @@ export class TransactionLedger {
           continue;
         }
         if (
-          mergePolicy.conflictWinner === "live" &&
-          (!liveElement ||
-            liveElement.isDeleted ||
-            collectTouchedProps(targetElement, liveElement).size > 0)
+          !liveElement ||
+          liveElement.isDeleted ||
+          collectTouchedProps(targetElement, liveElement).size > 0
         ) {
           continue;
         }
@@ -375,11 +250,7 @@ export class TransactionLedger {
 
       if (!entry.targetElement) {
         const liveElement = live.get(elementId) ?? null;
-        if (
-          mergePolicy.conflictWinner === "live" &&
-          liveElement &&
-          !liveElement.isDeleted
-        ) {
+        if (liveElement && !liveElement.isDeleted) {
           continue;
         }
         elementsBefore.set(
@@ -409,35 +280,9 @@ export class TransactionLedger {
       if (entry.touchedProps.has("*")) {
         const hasLiveConflict =
           collectTouchedProps(targetElement, liveElement).size > 0;
-        if (mergePolicy.conflictWinner === "live" && hasLiveConflict) {
+        if (hasLiveConflict) {
           continue;
         }
-        elementsBefore.set(
-          elementId,
-          deepCopyElement(baselineElement) as OrderedExcalidrawElement,
-        );
-        elementsAfter.set(
-          elementId,
-          deepCopyElement(targetElement) as OrderedExcalidrawElement,
-        );
-        continue;
-      }
-
-      const hasElementConflict = hasTouchedPropConflict(
-        entry,
-        liveElement,
-        targetElement,
-      );
-
-      if (hasElementConflict && mergePolicy.conflictScope === "element") {
-        if (mergePolicy.conflictWinner === "live") {
-          // Example: user changed strokeColor while tx changed strokeColor+x.
-          // "live + element" keeps the whole live element, including x.
-          continue;
-        }
-
-        // Example: same conflict as above but "transaction + element".
-        // This applies tx target for the whole element, including untouched props.
         elementsBefore.set(
           elementId,
           deepCopyElement(baselineElement) as OrderedExcalidrawElement,
@@ -467,7 +312,7 @@ export class TransactionLedger {
         const liveValue = getElementProp(liveElement, prop);
         const targetValue = getElementProp(targetElement, prop);
         const hasConflict = !isLedgerValueEqual(liveValue, targetValue);
-        if (mergePolicy.conflictWinner === "live" && hasConflict) {
+        if (hasConflict) {
           continue;
         }
 
@@ -498,6 +343,11 @@ export class TransactionLedger {
 
 /** Lifecycle state of a transaction. */
 export type TransactionStatus = "active" | "committed" | "canceled";
+
+/** Per-element partial patch used by tx.updateElements(). */
+export type TransactionElementUpdate = {
+  id: ExcalidrawElement["id"];
+} & ElementUpdate<OrderedExcalidrawElement>;
 
 /** Final summary returned when a transaction is committed or canceled. */
 export type TransactionSummary = {
@@ -563,7 +413,6 @@ export class Transaction {
   public readonly id = `tx-${randomId()}`;
 
   private readonly app: AppClassProperties;
-  private readonly mergePolicy: TransactionMergePolicy;
   private readonly ledger = new TransactionLedger();
   private readonly initialAppState: Partial<ObservedAppState>;
 
@@ -571,12 +420,8 @@ export class Transaction {
   private statusValue: TransactionStatus = "active";
   private cachedSummary: TransactionSummary | null = null;
 
-  constructor(
-    app: AppClassProperties,
-    options?: TransactionCreateOptions,
-  ) {
+  constructor(app: AppClassProperties) {
     this.app = app;
-    this.mergePolicy = resolveTransactionMergePolicy(options);
     this.initialAppState = { ...app.store.snapshot.appState };
   }
 
@@ -625,6 +470,46 @@ export class Transaction {
     }
   }
 
+  /**
+   * Partial element updates convenience API.
+   *
+   * Example:
+   * tx.updateElements({
+   *   elements: [{ id: "a", strokeColor: "#f00" }, { id: "b", x: 10, y: 20 }],
+   * })
+   */
+  updateElements<K extends keyof AppState>(data: {
+    elements: readonly TransactionElementUpdate[];
+    appState?: Pick<AppState, K> | null;
+  }): void {
+    const updatesById = new Map<
+      string,
+      ElementUpdate<OrderedExcalidrawElement>
+    >();
+
+    for (const update of data.elements) {
+      const { id, ...partialUpdate } = update;
+      updatesById.set(id, partialUpdate);
+    }
+
+    if (updatesById.size === 0) {
+      this.updateScene({ appState: data.appState });
+      return;
+    }
+
+    const nextElements = this.app.scene
+      .getElementsIncludingDeleted()
+      .map((element) => {
+        const partialUpdate = updatesById.get(element.id);
+        return partialUpdate ? newElementWith(element, partialUpdate) : element;
+      });
+
+    this.updateScene({
+      elements: nextElements,
+      appState: data.appState,
+    });
+  }
+
   commit(options?: {
     /**
      * Resolver that determines which appState changes are recorded in the
@@ -659,7 +544,7 @@ export class Transaction {
     if (this.statusValue === "committed" && hasWork) {
       const liveMap = this.app.scene.getElementsMapIncludingDeleted();
       const { elementsBefore, elementsAfter } =
-        this.ledger.buildSyntheticSnapshots(liveMap, this.mergePolicy);
+        this.ledger.buildSyntheticSnapshots(liveMap);
 
       // Resolve appState for the history entry.
       const hasAccumulatedAppState =
@@ -733,7 +618,7 @@ export class TransactionManager {
     this.app = app;
   }
 
-  create(options?: TransactionCreateOptions): Transaction {
-    return new Transaction(this.app, options);
+  create(): Transaction {
+    return new Transaction(this.app);
   }
 }

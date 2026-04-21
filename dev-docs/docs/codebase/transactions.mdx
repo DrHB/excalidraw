@@ -15,13 +15,13 @@ This system lets many canvas mutations over a time window (for example AI stream
 
 - `TransactionLedger`: keeps net mutation state across steps.
   - `recordStep()`: folds multiple updates into per-element baseline/target/touchedProps.
-  - `buildSyntheticSnapshots()`: reconciles ledger state with live scene under merge policy and returns `elementsBefore` / `elementsAfter` for history commit.
-- `TransactionManager`: thin factory holding the app reference. `create(options?)` returns a `Transaction`.
+  - `buildSyntheticSnapshots()`: reconciles ledger state with live scene using fixed `live-wins-per-prop` behavior and returns `elementsBefore` / `elementsAfter` for history commit.
+- `TransactionManager`: thin factory holding the app reference. `create()` returns a `Transaction`.
 - `Transaction` (class):
   - `tx.updateScene(data)`: wraps `app.updateScene` with `captureUpdate: NEVER`. Snapshots elements before/after and records the diff into the ledger. Accumulates appState intent.
+  - `tx.updateElements({ elements })`: convenience API for partial updates (`[{ id, strokeColor }, { id, x, y }]`). It materializes a next elements array and delegates to `tx.updateScene(...)`.
   - `tx.commit()`: builds synthetic before/after snapshots from the ledger, calls `store.commitSyntheticIncrement()`, returns a summary.
   - `tx.cancel()`: finalizes without committing history.
-- Merge-policy types (`ConflictWinner`, `ConflictScope`, `TransactionMergePolicy`) and defaults.
 
 ### `packages/element/src/store.ts`
 
@@ -58,6 +58,9 @@ const tx = app.transactionManager.create();
 
 tx.updateScene({ elements: updatedElementsA });
 tx.updateScene({ elements: updatedElementsB });
+tx.updateElements({
+  elements: [{ id: "rect-1", strokeColor: "#f00" }, { id: "rect-2", x: 120 }],
+});
 
 tx.commit();
 ```
@@ -85,6 +88,6 @@ try {
 ## Notes
 
 - `commit()` and `cancel()` are idempotent (repeated calls return the same summary).
-- `updateScene()` throws after `commit()` or `cancel()`.
-- Merge policy uses `conflictWinner` + `conflictScope` to resolve live/transaction divergence.
+- `updateScene()` / `updateElements()` throw after `commit()` or `cancel()`.
+- Element conflict handling is fixed to `live-wins-per-prop`.
 - Multi-transaction concurrency works naturally — each tx has its own ledger.

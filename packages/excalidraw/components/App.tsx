@@ -4606,8 +4606,8 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   /** Creates a new transaction for batching mutations into a single undo entry. */
-  public createTransaction: TransactionManager["create"] = (options) => {
-    return this.transactionManager.create(options);
+  public createTransaction: TransactionManager["create"] = () => {
+    return this.transactionManager.create();
   };
 
   public mutateElement = <TElement extends Mutable<ExcalidrawElement>>(
