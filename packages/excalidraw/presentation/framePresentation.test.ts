@@ -7,6 +7,8 @@ import {
   getOrderedPresentationFrames,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
+  movePresentationFrame,
+  reorderPresentationFrames,
 } from "./framePresentation";
 
 const createFrame = (name?: string) =>
@@ -32,7 +34,11 @@ describe("framePresentation helpers", () => {
     const frameB = withPresentationData(createFrame("B"), { order: 1 });
     const frameC = createFrame("C");
 
-    const orderedFrames = getOrderedPresentationFrames([frameC, frameA, frameB]);
+    const orderedFrames = getOrderedPresentationFrames([
+      frameC,
+      frameA,
+      frameB,
+    ]);
 
     expect(orderedFrames.map((frame) => frame.id)).toEqual([
       frameB.id,
@@ -46,7 +52,11 @@ describe("framePresentation helpers", () => {
     const frameB = withPresentationData(createFrame("B"), { order: 0 });
     const frameC = createFrame("C");
 
-    const orderedFrames = getOrderedPresentationFrames([frameB, frameA, frameC]);
+    const orderedFrames = getOrderedPresentationFrames([
+      frameB,
+      frameA,
+      frameC,
+    ]);
 
     expect(orderedFrames.map((frame) => frame.id)).toEqual([
       frameB.id,
@@ -63,13 +73,16 @@ describe("framePresentation helpers", () => {
     });
     const frameC = withPresentationData(createFrame("C"), { order: 2 });
 
-    const orderedFrames = getOrderedPresentationFrames([frameA, frameB, frameC]);
+    const orderedFrames = getOrderedPresentationFrames([
+      frameA,
+      frameB,
+      frameC,
+    ]);
 
     expect(isPresentationFrameHidden(frameB)).toBe(true);
-    expect(getVisiblePresentationFrames(orderedFrames).map((frame) => frame.id)).toEqual([
-      frameA.id,
-      frameC.id,
-    ]);
+    expect(
+      getVisiblePresentationFrames(orderedFrames).map((frame) => frame.id),
+    ).toEqual([frameA.id, frameC.id]);
     expect(getAdjacentPresentationFrame(orderedFrames, frameA.id, 1)?.id).toBe(
       frameC.id,
     );
@@ -81,9 +94,11 @@ describe("framePresentation helpers", () => {
 
     deletedFrame.isDeleted = true;
 
-    expect(collectPresentationFrames([liveFrame, deletedFrame]).map((frame) => frame.id)).toEqual([
-      liveFrame.id,
-    ]);
+    expect(
+      collectPresentationFrames([liveFrame, deletedFrame]).map(
+        (frame) => frame.id,
+      ),
+    ).toEqual([liveFrame.id]);
   });
 
   it("preserves unrelated customData fields when updating presentation metadata", () => {
@@ -99,11 +114,14 @@ describe("framePresentation helpers", () => {
       },
     };
 
-    const nextCustomData = buildFramePresentationCustomData(frameWithCustomData, {
-      order: 3,
-      hidden: true,
-      title: "Scene 1",
-    });
+    const nextCustomData = buildFramePresentationCustomData(
+      frameWithCustomData,
+      {
+        order: 3,
+        hidden: true,
+        title: "Scene 1",
+      },
+    );
 
     expect(nextCustomData.unrelated).toEqual({ keep: true });
     expect(nextCustomData.storyplanePresentation).toMatchObject({
@@ -113,5 +131,42 @@ describe("framePresentation helpers", () => {
       title: "Scene 1",
       reveals: [{ elementId: "el1", order: 0, effect: "fade" }],
     });
+  });
+
+  it("reorders frames deterministically for drag-and-drop", () => {
+    const frameA = withPresentationData(createFrame("A"), { order: 0 });
+    const frameB = withPresentationData(createFrame("B"), { order: 1 });
+    const frameC = withPresentationData(createFrame("C"), { order: 2 });
+
+    const reorderedFrames = reorderPresentationFrames(
+      [frameA, frameB, frameC],
+      frameA.id,
+      frameC.id,
+      "after",
+    );
+
+    expect(reorderedFrames.map((frame) => frame.id)).toEqual([
+      frameB.id,
+      frameC.id,
+      frameA.id,
+    ]);
+  });
+
+  it("moves frames by one slot for keyboard/button fallback reorder", () => {
+    const frameA = withPresentationData(createFrame("A"), { order: 0 });
+    const frameB = withPresentationData(createFrame("B"), { order: 1 });
+    const frameC = withPresentationData(createFrame("C"), { order: 2 });
+
+    const reorderedFrames = movePresentationFrame(
+      [frameA, frameB, frameC],
+      frameB.id,
+      1,
+    );
+
+    expect(reorderedFrames.map((frame) => frame.id)).toEqual([
+      frameA.id,
+      frameC.id,
+      frameB.id,
+    ]);
   });
 });

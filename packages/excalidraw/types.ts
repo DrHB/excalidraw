@@ -192,6 +192,7 @@ type _CommonCanvasAppState = {
   offsetLeft: AppState["offsetLeft"];
   offsetTop: AppState["offsetTop"];
   theme: AppState["theme"];
+  presentationMode: AppState["presentationMode"];
 };
 
 export type StaticCanvasAppState = Readonly<
@@ -274,7 +275,6 @@ export type BoxSelectionMode = "contain" | "overlap";
 export type PresentationModeState = {
   active: boolean;
   currentFrameId: ExcalidrawElement["id"] | null;
-  pathPanelOpen: boolean;
   sourceViewModeEnabled: boolean;
 };
 

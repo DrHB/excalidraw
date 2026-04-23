@@ -1895,7 +1895,11 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   private renderFrameNames = () => {
-    if (!this.state.frameRendering.enabled || !this.state.frameRendering.name) {
+    if (
+      this.state.presentationMode.active ||
+      !this.state.frameRendering.enabled ||
+      !this.state.frameRendering.name
+    ) {
       if (this.state.editingFrame) {
         this.resetEditingFrame(null);
       }

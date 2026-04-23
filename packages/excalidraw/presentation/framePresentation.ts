@@ -38,6 +38,8 @@ export type StoryplanePresentationUpdate = {
   reveals?: StoryplanePresentationReveal[];
 };
 
+export type PresentationFrameDropPosition = "before" | "after";
+
 const isRecord = (value: unknown): value is Record<string, any> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -180,6 +182,65 @@ export const sortPresentationFrames = (
 export const getOrderedPresentationFrames = (
   elements: readonly ExcalidrawElement[],
 ) => sortPresentationFrames(collectPresentationFrames(elements), elements);
+
+export const reorderPresentationFrames = (
+  frames: readonly NonDeleted<ExcalidrawFrameElement>[],
+  frameId: ExcalidrawFrameElement["id"],
+  targetFrameId: ExcalidrawFrameElement["id"],
+  position: PresentationFrameDropPosition = "before",
+) => {
+  if (frameId === targetFrameId) {
+    return [...frames];
+  }
+
+  const sourceIndex = frames.findIndex((frame) => frame.id === frameId);
+  const targetIndex = frames.findIndex((frame) => frame.id === targetFrameId);
+
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return [...frames];
+  }
+
+  const nextFrames = [...frames];
+  const [movedFrame] = nextFrames.splice(sourceIndex, 1);
+  const targetIndexInNext = nextFrames.findIndex(
+    (frame) => frame.id === targetFrameId,
+  );
+
+  if (targetIndexInNext < 0) {
+    return [...frames];
+  }
+
+  const insertionIndex =
+    position === "after" ? targetIndexInNext + 1 : targetIndexInNext;
+
+  nextFrames.splice(insertionIndex, 0, movedFrame);
+  return nextFrames;
+};
+
+export const movePresentationFrame = (
+  frames: readonly NonDeleted<ExcalidrawFrameElement>[],
+  frameId: ExcalidrawFrameElement["id"],
+  direction: -1 | 1,
+) => {
+  const currentIndex = frames.findIndex((frame) => frame.id === frameId);
+  const targetIndex = currentIndex + direction;
+
+  if (
+    currentIndex < 0 ||
+    targetIndex < 0 ||
+    targetIndex >= frames.length ||
+    currentIndex === targetIndex
+  ) {
+    return [...frames];
+  }
+
+  return reorderPresentationFrames(
+    frames,
+    frameId,
+    frames[targetIndex].id,
+    direction < 0 ? "before" : "after",
+  );
+};
 
 export const isPresentationFrameHidden = (
   frame: Pick<ExcalidrawFrameElement, "customData">,

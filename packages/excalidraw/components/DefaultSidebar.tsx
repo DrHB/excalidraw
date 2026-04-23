@@ -4,6 +4,7 @@ import {
   CANVAS_SEARCH_TAB,
   DEFAULT_SIDEBAR,
   LIBRARY_SIDEBAR_TAB,
+  PRESENTATION_SIDEBAR_TAB,
   composeEventHandlers,
 } from "@excalidraw/common";
 
@@ -16,10 +17,12 @@ import "../components/dropdownMenu/DropdownMenu.scss";
 
 import { useExcalidrawSetAppState } from "./App";
 import { LibraryMenu } from "./LibraryMenu";
+import { PresentationSidebar } from "./PresentationSidebar";
 import { SearchMenu } from "./SearchMenu";
 import { Sidebar } from "./Sidebar/Sidebar";
 import { withInternalFallback } from "./hoc/withInternalFallback";
-import { LibraryIcon, searchIcon } from "./icons";
+import { LibraryIcon, presentationIcon, searchIcon } from "./icons";
+import { t } from "../i18n";
 
 import type { SidebarProps, SidebarTriggerProps } from "./Sidebar/common";
 
@@ -105,6 +108,14 @@ export const DefaultSidebar = Object.assign(
                 <Sidebar.TabTrigger tab={LIBRARY_SIDEBAR_TAB}>
                   {LibraryIcon}
                 </Sidebar.TabTrigger>
+                <Sidebar.TabTrigger
+                  aria-label={t("presentation.sidebar")}
+                  data-testid="default-sidebar-tab-presentation"
+                  tab={PRESENTATION_SIDEBAR_TAB}
+                  title={t("presentation.sidebar")}
+                >
+                  {presentationIcon}
+                </Sidebar.TabTrigger>
                 <DefaultSidebarTabTriggersTunnel.Out />
               </Sidebar.TabTriggers>
             </Sidebar.Header>
@@ -114,6 +125,7 @@ export const DefaultSidebar = Object.assign(
             <Sidebar.Tab tab={CANVAS_SEARCH_TAB}>
               <SearchMenu />
             </Sidebar.Tab>
+            <PresentationSidebar />
             {children}
           </Sidebar.Tabs>
         </Sidebar>

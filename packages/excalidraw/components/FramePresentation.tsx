@@ -1,16 +1,17 @@
-import clsx from "clsx";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { KEYS, isInputLike } from "@excalidraw/common";
-
+import {
+  DEFAULT_SIDEBAR,
+  KEYS,
+  PRESENTATION_SIDEBAR_TAB,
+  isInputLike,
+} from "@excalidraw/common";
 import { isFrameElement } from "@excalidraw/element";
 
 import { t } from "../i18n";
 import {
-  buildFramePresentationCustomData,
   DEFAULT_PRESENTATION_TRANSITION_DURATION,
   getAdjacentPresentationFrame,
-  getFramePresentationData,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
   getPresentationFrameTitle,
@@ -19,13 +20,10 @@ import {
   PRESENTATION_VIEWPORT_ZOOM_FACTOR,
 } from "../presentation/framePresentation";
 
-import { Button } from "./Button";
 import { Island } from "./Island";
 import {
   chevronLeftIcon,
   chevronRight,
-  eyeClosedIcon,
-  eyeIcon,
   frameToolIcon,
   historyIcon,
   playerStopFilledIcon,
@@ -51,118 +49,6 @@ type FramePresentationProps = {
   isMobile: boolean;
   mode?: "all" | "controls" | "layer";
   setAppState: React.Component<any, AppState>["setState"];
-};
-
-const FramePathRow = ({
-  frame,
-  isCurrent,
-  isHidden,
-  canMoveUp,
-  canMoveDown,
-  presentationActive,
-  onCommitTitle,
-  onJumpToFrame,
-  onMove,
-  onToggleHidden,
-}: {
-  frame: PresentationFrame;
-  isCurrent: boolean;
-  isHidden: boolean;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  presentationActive: boolean;
-  onCommitTitle: (frame: PresentationFrame, title?: string) => void;
-  onJumpToFrame: (frame: PresentationFrame) => void;
-  onMove: (frameId: PresentationFrame["id"], direction: -1 | 1) => void;
-  onToggleHidden: (frame: PresentationFrame, hidden: boolean) => void;
-}) => {
-  const derivedTitle = getPresentationFrameTitle(frame) ?? "";
-  const [draftTitle, setDraftTitle] = useState(derivedTitle);
-
-  useEffect(() => {
-    setDraftTitle(derivedTitle);
-  }, [derivedTitle]);
-
-  const commitTitle = useCallback(() => {
-    onCommitTitle(frame, draftTitle.trim() || undefined);
-  }, [draftTitle, frame, onCommitTitle]);
-
-  return (
-    <div
-      className={clsx("FramePresentation__pathRow", {
-        "FramePresentation__pathRow--current": isCurrent,
-        "FramePresentation__pathRow--hidden": isHidden,
-      })}
-      data-testid={`presentation-frame-row-${frame.id}`}
-    >
-      <div className="FramePresentation__pathRowMain">
-        <div className="FramePresentation__pathRowTitle">
-          <input
-            className="FramePresentation__pathInput"
-            value={draftTitle}
-            placeholder={t("presentation.untitledFrame")}
-            onChange={(event) => setDraftTitle(event.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(event) => {
-              if (event.key === KEYS.ENTER) {
-                event.currentTarget.blur();
-              }
-            }}
-          />
-          {isHidden && (
-            <span className="FramePresentation__hiddenTag">
-              {t("presentation.hiddenTag")}
-            </span>
-          )}
-        </div>
-        <div className="FramePresentation__pathActions">
-          <Button
-            className="FramePresentation__iconButton"
-            onSelect={() => onMove(frame.id, -1)}
-            disabled={!canMoveUp}
-            aria-label={t("presentation.moveUp")}
-            title={t("presentation.moveUp")}
-            data-testid={`presentation-move-up-${frame.id}`}
-          >
-            ↑
-          </Button>
-          <Button
-            className="FramePresentation__iconButton"
-            onSelect={() => onMove(frame.id, 1)}
-            disabled={!canMoveDown}
-            aria-label={t("presentation.moveDown")}
-            title={t("presentation.moveDown")}
-            data-testid={`presentation-move-down-${frame.id}`}
-          >
-            ↓
-          </Button>
-          <Button
-            className="FramePresentation__iconButton"
-            onSelect={() => onToggleHidden(frame, !isHidden)}
-            aria-label={
-              isHidden ? t("presentation.showFrame") : t("presentation.hideFrame")
-            }
-            title={
-              isHidden ? t("presentation.showFrame") : t("presentation.hideFrame")
-            }
-            data-testid={`presentation-toggle-hidden-${frame.id}`}
-          >
-            {isHidden ? eyeClosedIcon : eyeIcon}
-          </Button>
-          <Button
-            className="FramePresentation__iconButton"
-            onSelect={() => onJumpToFrame(frame)}
-            disabled={presentationActive && isHidden}
-            aria-label={t("presentation.jumpToFrame")}
-            title={t("presentation.jumpToFrame")}
-            data-testid={`presentation-jump-${frame.id}`}
-          >
-            {chevronRight}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 export const FramePresentation = ({
@@ -199,6 +85,14 @@ export const FramePresentation = ({
     () => getAdjacentPresentationFrame(orderedFrames, currentFrameId, 1),
     [orderedFrames, currentFrameId],
   );
+
+  const previousFrameCountRef = useRef(orderedFrames.length);
+  const hasAutoOpenedSidebarRef = useRef(false);
+  const firstOrderedFrame = orderedFrames[0] ?? null;
+
+  const isPresentationSidebarOpen =
+    appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+    appState.openSidebar.tab === PRESENTATION_SIDEBAR_TAB;
 
   const scrollToFrame = useCallback(
     (frame: PresentationFrame, animate = true) => {
@@ -245,65 +139,18 @@ export const FramePresentation = ({
     [setAppState],
   );
 
-  const updateFrameMetadata = useCallback(
-    (
-      frame: PresentationFrame,
-      updates: Parameters<typeof buildFramePresentationCustomData>[1],
-      informMutation = true,
-    ) => {
-      app.scene.mutateElement(
-        frame,
-        {
-          customData: buildFramePresentationCustomData(frame, updates),
-        },
-        { informMutation, isDragging: false },
-      );
-    },
-    [app],
-  );
-
-  const applyFrameOrder = useCallback(
-    (frames: readonly PresentationFrame[]) => {
-      let didUpdate = false;
-
-      frames.forEach((frame, index) => {
-        if (getFramePresentationData(frame)?.order === index) {
-          return;
-        }
-
-        didUpdate = true;
-        updateFrameMetadata(frame, { order: index }, false);
-      });
-
-      if (didUpdate) {
-        app.scene.triggerUpdate();
-      }
-    },
-    [app.scene, updateFrameMetadata],
-  );
-
-  const handleMoveFrame = useCallback(
-    (frameId: PresentationFrame["id"], direction: -1 | 1) => {
-      const currentIndex = orderedFrames.findIndex((frame) => frame.id === frameId);
-      const nextIndex = currentIndex + direction;
-
-      if (
-        currentIndex < 0 ||
-        nextIndex < 0 ||
-        nextIndex >= orderedFrames.length
-      ) {
-        return;
-      }
-
-      const nextFrames = [...orderedFrames];
-      [nextFrames[currentIndex], nextFrames[nextIndex]] = [
-        nextFrames[nextIndex],
-        nextFrames[currentIndex],
-      ];
-      applyFrameOrder(nextFrames);
-    },
-    [applyFrameOrder, orderedFrames],
-  );
+  const togglePresentationSidebar = useCallback(() => {
+    setAppState((state) => ({
+      openSidebar:
+        state.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+        state.openSidebar.tab === PRESENTATION_SIDEBAR_TAB
+          ? null
+          : {
+              name: DEFAULT_SIDEBAR.name,
+              tab: PRESENTATION_SIDEBAR_TAB,
+            },
+    }));
+  }, [setAppState]);
 
   const handleStartPresentation = useCallback(
     (initialFrame?: PresentationFrame | null) => {
@@ -316,7 +163,8 @@ export const FramePresentation = ({
             isFrameElement(element) && !isPresentationFrameHidden(element),
         );
 
-      const nextFrame = initialFrame ?? selectedFrame ?? visibleFrames[0] ?? null;
+      const nextFrame =
+        initialFrame ?? selectedFrame ?? visibleFrames[0] ?? null;
 
       if (!nextFrame) {
         return;
@@ -370,26 +218,40 @@ export const FramePresentation = ({
     [focusEditor, scrollToFrame, setPresentationState],
   );
 
-  const handleJumpToFrame = useCallback(
-    (frame: PresentationFrame) => {
-      if (appState.presentationMode.active) {
-        if (isPresentationFrameHidden(frame)) {
-          return;
-        }
-        handleNavigateToFrame(frame);
-        return;
-      }
+  useEffect(() => {
+    if (mode === "controls" || isMobile) {
+      return;
+    }
 
-      scrollToFrame(frame);
-      focusEditor();
-    },
-    [
-      appState.presentationMode.active,
-      focusEditor,
-      handleNavigateToFrame,
-      scrollToFrame,
-    ],
-  );
+    const previousFrameCount = previousFrameCountRef.current;
+
+    if (
+      !hasAutoOpenedSidebarRef.current &&
+      previousFrameCount === 0 &&
+      orderedFrames.length === 1 &&
+      firstOrderedFrame &&
+      (appState.activeTool.type === "frame" ||
+        appState.selectedElementIds[firstOrderedFrame.id])
+    ) {
+      hasAutoOpenedSidebarRef.current = true;
+      setAppState({
+        openSidebar: {
+          name: DEFAULT_SIDEBAR.name,
+          tab: PRESENTATION_SIDEBAR_TAB,
+        },
+      });
+    }
+
+    previousFrameCountRef.current = orderedFrames.length;
+  }, [
+    appState.activeTool.type,
+    appState.selectedElementIds,
+    firstOrderedFrame,
+    isMobile,
+    mode,
+    orderedFrames.length,
+    setAppState,
+  ]);
 
   useEffect(() => {
     if (!appState.presentationMode.active) {
@@ -514,11 +376,6 @@ export const FramePresentation = ({
     visibleFrames,
   ]);
 
-  const shouldShowPathPanel =
-    mode !== "controls" &&
-    appState.presentationMode.pathPanelOpen &&
-    (!isMobile || appState.presentationMode.active);
-
   const shouldShowControls =
     mode !== "layer" &&
     !isMobile &&
@@ -530,167 +387,106 @@ export const FramePresentation = ({
       {shouldShowControls && (
         <Island padding={1} className="FramePresentation__toolbar">
           <ToolButton
+            aria-label={t("presentation.drawFrames")}
             className="FramePresentation__toolButton"
-            type="button"
+            data-testid="toolbar-draw-frames"
             icon={frameToolIcon}
             onClick={() => {
               app.setActiveTool({ type: "frame" });
               focusEditor();
             }}
             selected={appState.activeTool.type === "frame"}
-            data-testid="toolbar-draw-frames"
             title={`${t("presentation.drawFrames")} - ${KEYS.F.toUpperCase()}`}
-            aria-label={t("presentation.drawFrames")}
+            type="button"
           />
           <ToolButton
+            aria-label={t("presentation.present")}
             className="FramePresentation__toolButton"
-            type="button"
+            data-testid="toolbar-present"
+            disabled={!visibleFrames.length}
             icon={presentationIcon}
             onClick={() => handleStartPresentation()}
-            disabled={!visibleFrames.length}
-            data-testid="toolbar-present"
             title={t("presentation.present")}
-            aria-label={t("presentation.present")}
+            type="button"
           />
           <ToolButton
-            className="FramePresentation__toolButton"
-            type="button"
-            icon={historyIcon}
-            onClick={() =>
-              setPresentationState((state) => ({
-                pathPanelOpen: !state.pathPanelOpen,
-              }))
-            }
-            selected={appState.presentationMode.pathPanelOpen}
-            data-testid="toolbar-frame-path"
-            title={t("presentation.framePath")}
             aria-label={t("presentation.framePath")}
+            className="FramePresentation__toolButton"
+            data-testid="toolbar-frame-path"
+            icon={historyIcon}
+            onClick={togglePresentationSidebar}
+            selected={isPresentationSidebarOpen}
+            title={t("presentation.framePath")}
+            type="button"
           />
         </Island>
-      )}
-
-      {shouldShowPathPanel && (
-        <div
-          className="FramePresentation__pathPanel"
-          data-testid="presentation-frame-path-panel"
-        >
-          <Island padding={2} className="FramePresentation__pathPanelIsland">
-            <div className="FramePresentation__panelHeader">
-              <div>
-                <div className="FramePresentation__panelTitle">
-                  {t("presentation.framePath")}
-                </div>
-                <div className="FramePresentation__panelDescription">
-                  {!orderedFrames.length
-                    ? t("presentation.noFrames")
-                    : !visibleFrames.length
-                    ? t("presentation.allFramesHidden")
-                    : t("presentation.pathHint")}
-                </div>
-              </div>
-              <Button
-                className="FramePresentation__iconButton"
-                onSelect={() => setPresentationState({ pathPanelOpen: false })}
-                aria-label={t("buttons.close")}
-                title={t("buttons.close")}
-              >
-                ×
-              </Button>
-            </div>
-
-            {orderedFrames.length > 0 && (
-              <div className="FramePresentation__pathList">
-                {orderedFrames.map((frame, index) => (
-                  <FramePathRow
-                    key={frame.id}
-                    frame={frame}
-                    isCurrent={frame.id === currentFrameId}
-                    isHidden={isPresentationFrameHidden(frame)}
-                    canMoveUp={index > 0}
-                    canMoveDown={index < orderedFrames.length - 1}
-                    presentationActive={appState.presentationMode.active}
-                    onMove={handleMoveFrame}
-                    onJumpToFrame={handleJumpToFrame}
-                    onToggleHidden={(targetFrame, hidden) =>
-                      updateFrameMetadata(targetFrame, { hidden })
-                    }
-                    onCommitTitle={(targetFrame, title) =>
-                      updateFrameMetadata(targetFrame, { title })
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </Island>
-        </div>
       )}
 
       {mode !== "controls" &&
         appState.presentationMode.active &&
         currentVisibleFrame && (
-        <div className="FramePresentation__overlay" data-testid="presentation-overlay">
-          <Island padding={2} className="FramePresentation__overlayIsland">
-            <div className="FramePresentation__overlayMeta">
-              <div className="FramePresentation__overlayTitle">
-                {getPresentationFrameTitle(currentVisibleFrame) ??
-                  t("presentation.untitledFrame")}
+          <div
+            className="FramePresentation__overlay"
+            data-testid="presentation-overlay"
+          >
+            <Island padding={2} className="FramePresentation__overlayIsland">
+              <div className="FramePresentation__overlayMeta">
+                <div className="FramePresentation__overlayTitle">
+                  {getPresentationFrameTitle(currentVisibleFrame) ??
+                    t("presentation.untitledFrame")}
+                </div>
+                <div className="FramePresentation__overlayCount">
+                  {currentVisibleFrameIndex + 1} / {visibleFrames.length}
+                </div>
               </div>
-              <div className="FramePresentation__overlayCount">
-                {currentVisibleFrameIndex + 1} / {visibleFrames.length}
+              <div className="FramePresentation__overlayActions">
+                <ToolButton
+                  aria-label={t("presentation.previous")}
+                  className="FramePresentation__toolButton"
+                  data-testid="presentation-previous"
+                  disabled={!previousFrame}
+                  icon={chevronLeftIcon}
+                  onClick={() => handleNavigateToFrame(previousFrame)}
+                  showAriaLabel={true}
+                  title={t("presentation.previous")}
+                  type="button"
+                />
+                <ToolButton
+                  aria-label={t("presentation.framePath")}
+                  className="FramePresentation__toolButton"
+                  data-testid="presentation-frame-path-toggle"
+                  icon={historyIcon}
+                  onClick={togglePresentationSidebar}
+                  selected={isPresentationSidebarOpen}
+                  showAriaLabel={true}
+                  title={t("presentation.framePath")}
+                  type="button"
+                />
+                <ToolButton
+                  aria-label={t("presentation.next")}
+                  className="FramePresentation__toolButton"
+                  data-testid="presentation-next"
+                  disabled={!nextFrame}
+                  icon={chevronRight}
+                  onClick={() => handleNavigateToFrame(nextFrame)}
+                  showAriaLabel={true}
+                  title={t("presentation.next")}
+                  type="button"
+                />
+                <ToolButton
+                  aria-label={t("presentation.exit")}
+                  className="FramePresentation__toolButton"
+                  data-testid="presentation-exit"
+                  icon={playerStopFilledIcon}
+                  onClick={handleExitPresentation}
+                  showAriaLabel={true}
+                  title={t("presentation.exit")}
+                  type="button"
+                />
               </div>
-            </div>
-            <div className="FramePresentation__overlayActions">
-              <ToolButton
-                className="FramePresentation__toolButton"
-                type="button"
-                icon={chevronLeftIcon}
-                showAriaLabel={true}
-                onClick={() => handleNavigateToFrame(previousFrame)}
-                disabled={!previousFrame}
-                data-testid="presentation-previous"
-                title={t("presentation.previous")}
-                aria-label={t("presentation.previous")}
-              />
-              <ToolButton
-                className="FramePresentation__toolButton"
-                type="button"
-                icon={historyIcon}
-                showAriaLabel={true}
-                onClick={() =>
-                  setPresentationState((state) => ({
-                    pathPanelOpen: !state.pathPanelOpen,
-                  }))
-                }
-                selected={appState.presentationMode.pathPanelOpen}
-                data-testid="presentation-frame-path-toggle"
-                title={t("presentation.framePath")}
-                aria-label={t("presentation.framePath")}
-              />
-              <ToolButton
-                className="FramePresentation__toolButton"
-                type="button"
-                icon={chevronRight}
-                showAriaLabel={true}
-                onClick={() => handleNavigateToFrame(nextFrame)}
-                disabled={!nextFrame}
-                data-testid="presentation-next"
-                title={t("presentation.next")}
-                aria-label={t("presentation.next")}
-              />
-              <ToolButton
-                className="FramePresentation__toolButton"
-                type="button"
-                icon={playerStopFilledIcon}
-                showAriaLabel={true}
-                onClick={handleExitPresentation}
-                data-testid="presentation-exit"
-                title={t("presentation.exit")}
-                aria-label={t("presentation.exit")}
-              />
-            </div>
-          </Island>
-        </div>
-      )}
+            </Island>
+          </div>
+        )}
     </>
   );
 };

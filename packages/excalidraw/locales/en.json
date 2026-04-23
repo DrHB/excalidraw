@@ -258,6 +258,7 @@
     "embeddableInteractionButton": "Click to interact"
   },
   "presentation": {
+    "sidebar": "Presentation",
     "drawFrames": "Draw Frames",
     "present": "Present",
     "framePath": "Frame Path",

@@ -115,7 +115,6 @@ export const getDefaultAppState = (): Omit<
     presentationMode: {
       active: false,
       currentFrameId: null,
-      pathPanelOpen: false,
       sourceViewModeEnabled: false,
     },
     showHyperlinkPopup: false,
