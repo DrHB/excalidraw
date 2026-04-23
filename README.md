@@ -49,34 +49,48 @@
   </figure>
 </div>
 
+## About this fork
+
+This repository is a public fork of Excalidraw focused on a presentation-oriented whiteboard workflow.
+
+Current work in this fork:
+
+- Prezi-style frame presentation built on top of Excalidraw frames
+- frame path ordering and presentation navigation
+- local UI and interaction experiments around whiteboard storytelling
+
+This fork stays under Excalidraw's MIT license. Anyone can clone it, use it, modify it, and publish their own changes under that license.
+
+If you want the stable upstream project, use [excalidraw/excalidraw](https://github.com/excalidraw/excalidraw). If you want the presentation-mode experiments, use this fork.
+
 ## Features
 
 The Excalidraw editor (npm package) supports:
 
-- 💯&nbsp;Free & open-source.
-- 🎨&nbsp;Infinite, canvas-based whiteboard.
-- ✍️&nbsp;Hand-drawn like style.
-- 🌓&nbsp;Dark mode.
-- 🏗️&nbsp;Customizable.
-- 📷&nbsp;Image support.
-- 😀&nbsp;Shape libraries support.
-- 🌐&nbsp;Localization (i18n) support.
-- 🖼️&nbsp;Export to PNG, SVG & clipboard.
-- 💾&nbsp;Open format - export drawings as an `.excalidraw` json file.
-- ⚒️&nbsp;Wide range of tools - rectangle, circle, diamond, arrow, line, free-draw, eraser...
-- ➡️&nbsp;Arrow-binding & labeled arrows.
-- 🔙&nbsp;Undo / Redo.
-- 🔍&nbsp;Zoom and panning support.
+- Free & open-source.
+- Infinite, canvas-based whiteboard.
+- Hand-drawn like style.
+- Dark mode.
+- Customizable.
+- Image support.
+- Shape libraries support.
+- Localization (i18n) support.
+- Export to PNG, SVG & clipboard.
+- Open format - export drawings as an `.excalidraw` json file.
+- Wide range of tools - rectangle, circle, diamond, arrow, line, free-draw, eraser...
+- Arrow-binding & labeled arrows.
+- Undo / Redo.
+- Zoom and panning support.
 
 ## Excalidraw.com
 
 The app hosted at [excalidraw.com](https://excalidraw.com) is a minimal showcase of what you can build with Excalidraw. Its [source code](https://github.com/excalidraw/excalidraw/tree/master/excalidraw-app) is part of this repository as well, and the app features:
 
-- 📡&nbsp;PWA support (works offline).
-- 🤼&nbsp;Real-time collaboration.
-- 🔒&nbsp;End-to-end encryption.
-- 💾&nbsp;Local-first support (autosaves to the browser).
-- 🔗&nbsp;Shareable links (export to a readonly link you can share with others).
+- PWA support (works offline).
+- Real-time collaboration.
+- End-to-end encryption.
+- Local-first support (autosaves to the browser).
+- Shareable links (export to a readonly link you can share with others).
 
 We'll be adding these features as drop-in plugins for the npm package in the future.
 

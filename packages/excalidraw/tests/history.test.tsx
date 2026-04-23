@@ -93,6 +93,7 @@ const checkpoint = (name: string) => {
   const {
     name: _,
     scrolledOutside,
+    presentationMode,
     selectedLinearElement,
     ...strippedAppState
   } = h.state;

@@ -271,6 +271,13 @@ export type ObservedElementsAppState = {
 
 export type BoxSelectionMode = "contain" | "overlap";
 
+export type PresentationModeState = {
+  active: boolean;
+  currentFrameId: ExcalidrawElement["id"] | null;
+  pathPanelOpen: boolean;
+  sourceViewModeEnabled: boolean;
+};
+
 export interface AppState {
   contextMenu: {
     items: ContextMenuItems;
@@ -424,6 +431,7 @@ export interface AppState {
   gridStep: number;
   gridModeEnabled: boolean;
   viewModeEnabled: boolean;
+  presentationMode: PresentationModeState;
 
   /** top-most selected groups (i.e. does not include nested groups) */
   selectedGroupIds: { [groupId: string]: boolean };

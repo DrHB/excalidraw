@@ -61,6 +61,7 @@ import { Island } from "./Island";
 import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
+import { FramePresentation } from "./FramePresentation";
 
 import "./LayerUI.scss";
 import "./Toolbar.scss";
@@ -386,6 +387,14 @@ const LayerUI = ({
                             />
                           </Island>
                         )}
+                        <FramePresentation
+                          app={app}
+                          appState={appState}
+                          elements={elements}
+                          isMobile={editorInterface.formFactor === "phone"}
+                          mode="controls"
+                          setAppState={setAppState}
+                        />
                       </Stack.Row>
                     </Stack.Col>
                   </div>
@@ -631,6 +640,14 @@ const LayerUI = ({
                 )}
               </div>
             )}
+            <FramePresentation
+              app={app}
+              appState={appState}
+              elements={elements}
+              isMobile={false}
+              mode="layer"
+              setAppState={setAppState}
+            />
           </div>
           {renderSidebars()}
         </>

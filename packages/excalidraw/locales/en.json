@@ -257,6 +257,24 @@
     "confirm": "Confirm",
     "embeddableInteractionButton": "Click to interact"
   },
+  "presentation": {
+    "drawFrames": "Draw Frames",
+    "present": "Present",
+    "framePath": "Frame Path",
+    "pathHint": "Order frames for presentation and jump between them.",
+    "noFrames": "Add a frame to build a presentation path.",
+    "allFramesHidden": "All frames are currently hidden from presentation.",
+    "untitledFrame": "Untitled frame",
+    "hiddenTag": "Hidden",
+    "moveUp": "Move frame up",
+    "moveDown": "Move frame down",
+    "showFrame": "Show frame in presentation",
+    "hideFrame": "Hide frame from presentation",
+    "jumpToFrame": "Jump to frame",
+    "previous": "Previous",
+    "next": "Next",
+    "exit": "Exit"
+  },
   "alerts": {
     "clearReset": "This will clear the whole canvas. Are you sure?",
     "couldNotCreateShareableLink": "Couldn't create shareable link.",

@@ -82,8 +82,12 @@ describe("exportToSvg", () => {
       }),
     });
 
+    const { presentationMode, ...optionsWithoutPresentationMode } =
+      passedOptions() as ReturnType<typeof passedOptions> & {
+        presentationMode?: unknown;
+      };
     const passedOptionsWhenDefault = {
-      ...passedOptions(),
+      ...optionsWithoutPresentationMode,
       // To avoid varying snapshots
       name: "name",
     };
