@@ -27,7 +27,7 @@ import { newElementWith } from "@excalidraw/element";
 import { isFrameLikeElement } from "@excalidraw/element";
 
 import {
-  getElementsOverlappingFrame,
+  getElementsVisibleInFrame,
   getFrameLikeElements,
   getFrameLikeTitle,
   getRootElements,
@@ -157,7 +157,7 @@ const prepareElementsForRender = ({
   let nextElements: readonly ExcalidrawElement[];
 
   if (exportingFrame) {
-    nextElements = getElementsOverlappingFrame(
+    nextElements = getElementsVisibleInFrame(
       elements,
       exportingFrame,
       arrayToMap(elements),

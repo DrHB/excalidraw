@@ -13,22 +13,19 @@ import {
   KEYS,
   PRESENTATION_SIDEBAR_TAB,
 } from "@excalidraw/common";
-import {
-  isFrameElement,
-  selectGroupsForSelectedElements,
-} from "@excalidraw/element";
+import { selectGroupsForSelectedElements } from "@excalidraw/element";
 
 import { t } from "../i18n";
 import { usePresentationFrameSvg } from "../hooks/usePresentationFrameSvg";
 import {
   buildFramePresentationCustomData,
   DEFAULT_PRESENTATION_TRANSITION_DURATION,
+  getPresentationFramePreviewSignatures,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
   getPresentationFrameTitle,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
-  movePresentationFrame,
   PRESENTATION_VIEWPORT_ZOOM_FACTOR,
   reorderPresentationFrames,
 } from "../presentation/framePresentation";
@@ -65,40 +62,6 @@ const getDropPosition = (
 ): DropPosition => {
   const bounds = event.currentTarget.getBoundingClientRect();
   return event.clientY - bounds.top > bounds.height / 2 ? "after" : "before";
-};
-
-const buildPreviewSignatures = (
-  elements: readonly NonDeletedExcalidrawElement[],
-) => {
-  const partsByFrameId = new Map<PresentationFrame["id"], string[]>();
-
-  for (const [index, element] of elements.entries()) {
-    const signature = `${index}:${element.id}:${element.version}:${element.versionNonce}`;
-
-    if (isFrameElement(element)) {
-      const existingParts = partsByFrameId.get(element.id) ?? [];
-      partsByFrameId.set(element.id, [
-        `frame:${signature}`,
-        ...existingParts.filter((part) => !part.startsWith("frame:")),
-      ]);
-      continue;
-    }
-
-    if (!element.frameId) {
-      continue;
-    }
-
-    const parts = partsByFrameId.get(element.frameId) ?? [];
-    parts.push(`child:${signature}`);
-    partsByFrameId.set(element.frameId, parts);
-  }
-
-  return new Map(
-    [...partsByFrameId.entries()].map(([frameId, parts]) => [
-      frameId,
-      parts.join("|"),
-    ]),
-  );
 };
 
 const useVisibleInViewport = () => {
@@ -166,8 +129,6 @@ const PresentationFrameThumbnail = ({
 
 const PresentationSidebarRow = ({
   canDrag,
-  canMoveDown,
-  canMoveUp,
   elements,
   frame,
   index,
@@ -181,14 +142,11 @@ const PresentationSidebarRow = ({
   onDragStart,
   onDrop,
   onJumpToFrame,
-  onMove,
   onToggleHidden,
   presentationActive,
   signature,
 }: {
   canDrag: boolean;
-  canMoveDown: boolean;
-  canMoveUp: boolean;
   elements: readonly NonDeletedExcalidrawElement[];
   frame: PresentationFrame;
   index: number;
@@ -211,7 +169,6 @@ const PresentationSidebarRow = ({
     frameId: PresentationFrame["id"],
   ) => void;
   onJumpToFrame: (frame: PresentationFrame) => void;
-  onMove: (frameId: PresentationFrame["id"], direction: -1 | 1) => void;
   onToggleHidden: (frame: PresentationFrame, hidden: boolean) => void;
   presentationActive: boolean;
   signature: string;
@@ -306,28 +263,6 @@ const PresentationSidebarRow = ({
           </button>
         )}
         <Button
-          aria-label={t("presentation.moveUp")}
-          className="PresentationSidebar__iconButton"
-          data-testid={`presentation-move-up-${frame.id}`}
-          disabled={!canMoveUp}
-          onClick={stopPropagation}
-          onSelect={() => onMove(frame.id, -1)}
-          title={t("presentation.moveUp")}
-        >
-          <span aria-hidden="true">↑</span>
-        </Button>
-        <Button
-          aria-label={t("presentation.moveDown")}
-          className="PresentationSidebar__iconButton"
-          data-testid={`presentation-move-down-${frame.id}`}
-          disabled={!canMoveDown}
-          onClick={stopPropagation}
-          onSelect={() => onMove(frame.id, 1)}
-          title={t("presentation.moveDown")}
-        >
-          <span aria-hidden="true">↓</span>
-        </Button>
-        <Button
           aria-label={
             isHidden ? t("presentation.showFrame") : t("presentation.hideFrame")
           }
@@ -378,7 +313,7 @@ export const PresentationSidebar = memo(() => {
     [orderedFrames],
   );
   const previewSignatures = useMemo(
-    () => buildPreviewSignatures(elements),
+    () => getPresentationFramePreviewSignatures(elements),
     [elements],
   );
   const canDrag = editorInterface.formFactor !== "phone";
@@ -517,13 +452,6 @@ export const PresentationSidebar = memo(() => {
     ],
   );
 
-  const handleMoveFrame = useCallback(
-    (frameId: PresentationFrame["id"], direction: -1 | 1) => {
-      applyFrameOrder(movePresentationFrame(orderedFrames, frameId, direction));
-    },
-    [applyFrameOrder, orderedFrames],
-  );
-
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLElement>, frameId: PresentationFrame["id"]) => {
       event.dataTransfer.setData("text/plain", frameId);
@@ -614,8 +542,6 @@ export const PresentationSidebar = memo(() => {
             {orderedFrames.map((frame, index) => (
               <PresentationSidebarRow
                 canDrag={canDrag}
-                canMoveDown={index < orderedFrames.length - 1}
-                canMoveUp={index > 0}
                 elements={elements}
                 frame={frame}
                 index={index}
@@ -635,7 +561,6 @@ export const PresentationSidebar = memo(() => {
                 onDragStart={handleDragStart}
                 onDrop={handleDrop}
                 onJumpToFrame={handleJumpToFrame}
-                onMove={handleMoveFrame}
                 onToggleHidden={(targetFrame, hidden) =>
                   updateFrameMetadata(targetFrame, { hidden })
                 }

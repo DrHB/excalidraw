@@ -114,6 +114,26 @@ describe("frame presentation UI", () => {
     expect(queryByTestId(container, "presentation-sidebar")).not.toBe(null);
   });
 
+  it("uses drag-only reordering controls in the organizer", async () => {
+    const { container } = await render(<Excalidraw />);
+    const { frameA } = createFrames();
+
+    fireEvent.click(queryByTestId(container, "toolbar-frame-path")!);
+
+    await waitFor(() => {
+      expect(
+        queryByTestId(container, `presentation-drag-${frameA.id}`),
+      ).not.toBe(null);
+    });
+
+    expect(queryByTestId(container, `presentation-move-up-${frameA.id}`)).toBe(
+      null,
+    );
+    expect(
+      queryByTestId(container, `presentation-move-down-${frameA.id}`),
+    ).toBe(null);
+  });
+
   it("auto-opens the organizer once when the first frame is created", async () => {
     const { container } = await render(<Excalidraw />);
 

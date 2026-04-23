@@ -1,4 +1,5 @@
-import { isFrameElement } from "@excalidraw/element";
+import { arrayToMap } from "@excalidraw/common";
+import { getElementsVisibleInFrame, isFrameElement } from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
@@ -182,6 +183,27 @@ export const sortPresentationFrames = (
 export const getOrderedPresentationFrames = (
   elements: readonly ExcalidrawElement[],
 ) => sortPresentationFrames(collectPresentationFrames(elements), elements);
+
+export const getPresentationFramePreviewSignatures = (
+  elements: readonly ExcalidrawElement[],
+) => {
+  const elementsMap = arrayToMap(elements);
+  const signatureByElementId = new Map(
+    elements.map((element, index) => [
+      element.id,
+      `${index}:${element.id}:${element.version}:${element.versionNonce}`,
+    ]),
+  );
+
+  return new Map(
+    collectPresentationFrames(elements).map((frame) => [
+      frame.id,
+      getElementsVisibleInFrame(elements, frame, elementsMap)
+        .map((element) => signatureByElementId.get(element.id)!)
+        .join("|"),
+    ]),
+  );
+};
 
 export const reorderPresentationFrames = (
   frames: readonly NonDeleted<ExcalidrawFrameElement>[],

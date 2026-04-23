@@ -1,19 +1,20 @@
-import { newFrameElement } from "@excalidraw/element";
+import { newElement, newFrameElement } from "@excalidraw/element";
 
 import {
   buildFramePresentationCustomData,
   collectPresentationFrames,
   getAdjacentPresentationFrame,
   getOrderedPresentationFrames,
+  getPresentationFramePreviewSignatures,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
   movePresentationFrame,
   reorderPresentationFrames,
 } from "./framePresentation";
 
-const createFrame = (name?: string) =>
+const createFrame = (name?: string, x = 0) =>
   newFrameElement({
-    x: 0,
+    x,
     y: 0,
     width: 200,
     height: 120,
@@ -168,5 +169,90 @@ describe("framePresentation helpers", () => {
       frameC.id,
       frameB.id,
     ]);
+  });
+
+  it("builds preview signatures from the same overlapping elements used by export", () => {
+    const frame = createFrame("Preview");
+    const otherFrame = createFrame("Other", 320);
+
+    const unboundOverlappingRect = newElement({
+      type: "rectangle",
+      x: 24,
+      y: 24,
+      width: 80,
+      height: 48,
+    });
+    const boundOverlappingRect = newElement({
+      type: "rectangle",
+      x: 40,
+      y: 40,
+      width: 60,
+      height: 36,
+      frameId: otherFrame.id,
+    });
+    const outsideRect = newElement({
+      type: "rectangle",
+      x: 520,
+      y: 520,
+      width: 40,
+      height: 24,
+    });
+
+    const previewSignatures = getPresentationFramePreviewSignatures([
+      frame,
+      otherFrame,
+      unboundOverlappingRect,
+      boundOverlappingRect,
+      outsideRect,
+    ]);
+
+    expect(previewSignatures.get(frame.id)).toContain(
+      unboundOverlappingRect.id,
+    );
+    expect(previewSignatures.get(frame.id)).not.toContain(
+      boundOverlappingRect.id,
+    );
+    expect(previewSignatures.get(frame.id)).not.toContain(outsideRect.id);
+  });
+
+  it("includes nested frame descendants in preview signatures", () => {
+    const outerFrame = createFrame("Outer");
+    const innerFrame = newFrameElement({
+      x: 32,
+      y: 28,
+      width: 140,
+      height: 100,
+      frameId: outerFrame.id,
+      name: "Inner",
+    });
+    const innerFrameChild = newElement({
+      type: "rectangle",
+      x: 48,
+      y: 52,
+      width: 80,
+      height: 48,
+      frameId: innerFrame.id,
+    });
+    const outerFrameOverlap = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 120,
+      height: 64,
+      frameId: outerFrame.id,
+    });
+
+    const previewSignatures = getPresentationFramePreviewSignatures([
+      outerFrame,
+      innerFrame,
+      innerFrameChild,
+      outerFrameOverlap,
+    ]);
+
+    expect(previewSignatures.get(outerFrame.id)).toContain(innerFrameChild.id);
+    expect(previewSignatures.get(innerFrame.id)).toContain(innerFrameChild.id);
+    expect(previewSignatures.get(innerFrame.id)).not.toContain(
+      outerFrameOverlap.id,
+    );
   });
 });

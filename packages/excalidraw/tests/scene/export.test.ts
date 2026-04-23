@@ -530,5 +530,121 @@ describe("exporting frames", () => {
       expect(svg.getAttribute("width")).toBe(frame1.width.toString());
       expect(svg.getAttribute("height")).toBe(frame1.height.toString());
     });
+
+    it("should export nested frame descendants when exporting an ancestor frame", async () => {
+      const outerFrame = API.createElement({
+        type: "frame",
+        width: 300,
+        height: 220,
+        x: 0,
+        y: 0,
+      });
+      const innerFrame = API.createElement({
+        type: "frame",
+        width: 140,
+        height: 100,
+        x: 32,
+        y: 28,
+        frameId: outerFrame.id,
+      });
+      const innerFrameChild = API.createElement({
+        type: "rectangle",
+        width: 80,
+        height: 48,
+        x: 48,
+        y: 52,
+        frameId: innerFrame.id,
+      });
+      const outerFrameChild = API.createElement({
+        type: "rectangle",
+        width: 56,
+        height: 36,
+        x: 220,
+        y: 160,
+        frameId: outerFrame.id,
+      });
+
+      const svg = await exportToSvg({
+        elements: [outerFrame, innerFrame, innerFrameChild, outerFrameChild],
+        files: null,
+        exportPadding: 0,
+        exportingFrame: outerFrame,
+      });
+
+      expect(
+        svg.querySelector(`[data-id="${innerFrameChild.id}"]`),
+      ).not.toBeNull();
+      expect(
+        svg.querySelector(`[data-id="${outerFrameChild.id}"]`),
+      ).not.toBeNull();
+      expect(svg.getAttribute("width")).toBe(outerFrame.width.toString());
+      expect(svg.getAttribute("height")).toBe(outerFrame.height.toString());
+    });
+
+    it("should export nested frame children without ancestor frame-owned overlaps", async () => {
+      const outerFrame = API.createElement({
+        type: "frame",
+        width: 300,
+        height: 220,
+        x: 0,
+        y: 0,
+      });
+      const innerFrame = API.createElement({
+        type: "frame",
+        width: 140,
+        height: 100,
+        x: 32,
+        y: 28,
+        frameId: outerFrame.id,
+      });
+      const innerFrameChild = API.createElement({
+        type: "rectangle",
+        width: 80,
+        height: 48,
+        x: 48,
+        y: 52,
+        frameId: innerFrame.id,
+      });
+      const outerFrameOverlap = API.createElement({
+        type: "rectangle",
+        width: 120,
+        height: 64,
+        x: 20,
+        y: 20,
+        frameId: outerFrame.id,
+      });
+      const unframedOverlap = API.createElement({
+        type: "rectangle",
+        width: 24,
+        height: 24,
+        x: 60,
+        y: 60,
+      });
+
+      const svg = await exportToSvg({
+        elements: [
+          outerFrame,
+          innerFrame,
+          innerFrameChild,
+          outerFrameOverlap,
+          unframedOverlap,
+        ],
+        files: null,
+        exportPadding: 0,
+        exportingFrame: innerFrame,
+      });
+
+      expect(
+        svg.querySelector(`[data-id="${innerFrameChild.id}"]`),
+      ).not.toBeNull();
+      expect(
+        svg.querySelector(`[data-id="${outerFrameOverlap.id}"]`),
+      ).toBeNull();
+      expect(
+        svg.querySelector(`[data-id="${unframedOverlap.id}"]`),
+      ).not.toBeNull();
+      expect(svg.getAttribute("width")).toBe(innerFrame.width.toString());
+      expect(svg.getAttribute("height")).toBe(innerFrame.height.toString());
+    });
   });
 });

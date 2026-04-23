@@ -935,6 +935,58 @@ export const getElementsOverlappingFrame = (
   );
 };
 
+export const isElementInFrameHierarchy = (
+  element: Pick<ExcalidrawElement, "id" | "frameId">,
+  frameId: ExcalidrawFrameLikeElement["id"],
+  elementsMap: ElementsMap,
+) => {
+  if (element.id === frameId) {
+    return true;
+  }
+
+  let currentFrameId = element.frameId;
+  const visitedFrameIds = new Set<ExcalidrawFrameLikeElement["id"]>();
+
+  while (currentFrameId && !visitedFrameIds.has(currentFrameId)) {
+    if (currentFrameId === frameId) {
+      return true;
+    }
+
+    visitedFrameIds.add(currentFrameId);
+    const containingFrame = elementsMap.get(currentFrameId);
+    currentFrameId = containingFrame?.frameId ?? null;
+  }
+
+  return false;
+};
+
+export const getElementsVisibleInFrame = (
+  elements: readonly ExcalidrawElement[],
+  frame: ExcalidrawFrameLikeElement,
+  elementsMap: ElementsMap,
+) => {
+  return elements.filter((element) => {
+    if (
+      !doBoundsIntersect(
+        getElementBounds(element, elementsMap),
+        getElementBounds(frame, elementsMap),
+      )
+    ) {
+      return false;
+    }
+
+    if (isFrameLikeElement(element)) {
+      return isElementInFrameHierarchy(element, frame.id, elementsMap);
+    }
+
+    if (!element.frameId) {
+      return true;
+    }
+
+    return isElementInFrameHierarchy(element, frame.id, elementsMap);
+  });
+};
+
 export const frameAndChildrenSelectedTogether = (
   selectedElements: readonly ExcalidrawElement[],
 ) => {
