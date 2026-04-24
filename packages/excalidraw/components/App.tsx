@@ -361,6 +361,7 @@ import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
 import { History } from "../history";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
+import { getPresentationFrameLabel } from "../presentation/framePresentation";
 
 import {
   calculateScrollCenter,
@@ -1919,7 +1920,7 @@ class App extends React.Component<AppProps, AppState> {
           : null
         : null;
 
-    return nonDeletedFramesLikes.map((f) => {
+    return nonDeletedFramesLikes.map((f, frameIndex) => {
       if (
         !isElementInViewport(
           f,
@@ -1951,7 +1952,10 @@ class App extends React.Component<AppProps, AppState> {
 
       let frameNameJSX;
 
-      const frameName = getFrameLikeTitle(f);
+      const frameName =
+        f.name === null
+          ? getPresentationFrameLabel(f, frameIndex)
+          : getFrameLikeTitle(f);
 
       if (f.id === this.state.editingFrame) {
         const frameNameInEdit = frameName;
@@ -2031,6 +2035,19 @@ class App extends React.Component<AppProps, AppState> {
             color: isDarkTheme
               ? FRAME_STYLE.nameColorDarkTheme
               : FRAME_STYLE.nameColorLightTheme,
+            background: isDarkTheme
+              ? "rgba(20, 20, 24, 0.82)"
+              : "rgba(255, 255, 255, 0.88)",
+            border: `1px solid ${
+              isDarkTheme ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)"
+            }`,
+            borderRadius: 6,
+            boxShadow: isDarkTheme
+              ? "0 2px 8px rgba(0, 0, 0, 0.22)"
+              : "0 2px 8px rgba(15, 23, 42, 0.08)",
+            padding: "1px 6px",
+            fontWeight: 600,
+            letterSpacing: 0,
             lineHeight: FRAME_STYLE.nameLineHeight,
             width: "max-content",
             maxWidth:

@@ -134,6 +134,20 @@ describe("frame presentation UI", () => {
     ).toBe(null);
   });
 
+  it("uses optional title placeholders for unnamed frames in the organizer", async () => {
+    const { container } = await render(<Excalidraw />);
+    const frame = createPresentationFrame(100);
+
+    API.updateScene({ elements: [frame] });
+    fireEvent.click(queryByTestId(container, "toolbar-frame-path")!);
+
+    await waitFor(() => {
+      expect(
+        queryByTestId(container, `presentation-title-${frame.id}`),
+      ).toHaveAttribute("placeholder", "Add title");
+    });
+  });
+
   it("auto-opens the organizer once when the first frame is created", async () => {
     const { container } = await render(<Excalidraw />);
 

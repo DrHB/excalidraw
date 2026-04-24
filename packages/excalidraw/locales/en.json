@@ -265,6 +265,7 @@
     "pathHint": "Order frames for presentation and jump between them.",
     "noFrames": "Add a frame to build a presentation path.",
     "allFramesHidden": "All frames are currently hidden from presentation.",
+    "addFrameTitle": "Add title",
     "untitledFrame": "Untitled frame",
     "hiddenTag": "Hidden",
     "moveUp": "Move frame up",

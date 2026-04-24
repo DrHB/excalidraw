@@ -10,7 +10,6 @@ import { isFrameElement } from "@excalidraw/element";
 
 import { t } from "../i18n";
 import {
-  DEFAULT_PRESENTATION_TRANSITION_DURATION,
   getAdjacentPresentationFrame,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
@@ -96,16 +95,20 @@ export const FramePresentation = ({
 
   const scrollToFrame = useCallback(
     (frame: PresentationFrame, animate = true) => {
+      const previousFrame = appState.presentationMode.active
+        ? visibleFrames.find(
+            (visibleFrame) => visibleFrame.id === currentFrameId,
+          ) ?? null
+        : null;
+
       app.scrollToContent(frame, {
         fitToViewport: true,
         viewportZoomFactor: PRESENTATION_VIEWPORT_ZOOM_FACTOR,
         animate,
-        duration:
-          getPresentationFrameDuration(frame) ??
-          DEFAULT_PRESENTATION_TRANSITION_DURATION,
+        duration: getPresentationFrameDuration(frame, previousFrame),
       });
     },
-    [app],
+    [app, appState.presentationMode.active, currentFrameId, visibleFrames],
   );
 
   const focusEditor = useCallback(() => {

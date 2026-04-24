@@ -5,11 +5,14 @@ import type {
   ExcalidrawElement,
   ExcalidrawFrameElement,
   NonDeleted,
+  NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
 export const PRESENTATION_CUSTOM_DATA_KEY = "storyplanePresentation";
 export const PRESENTATION_METADATA_VERSION = 1 as const;
-export const DEFAULT_PRESENTATION_TRANSITION_DURATION = 650;
+export const DEFAULT_PRESENTATION_TRANSITION_DURATION = 950;
+export const MIN_PRESENTATION_TRANSITION_DURATION = 850;
+export const MAX_PRESENTATION_TRANSITION_DURATION = 1800;
 export const PRESENTATION_VIEWPORT_ZOOM_FACTOR = 0.86;
 
 export type StoryplanePresentationReveal = {
@@ -40,6 +43,11 @@ export type StoryplanePresentationUpdate = {
 };
 
 export type PresentationFrameDropPosition = "before" | "after";
+
+type PresentationFrameGeometry = Pick<
+  ExcalidrawFrameElement,
+  "id" | "x" | "y" | "width" | "height"
+>;
 
 const isRecord = (value: unknown): value is Record<string, any> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -198,12 +206,23 @@ export const getPresentationFramePreviewSignatures = (
   return new Map(
     collectPresentationFrames(elements).map((frame) => [
       frame.id,
-      getElementsVisibleInFrame(elements, frame, elementsMap)
+      getPresentationFramePreviewElements(elements, frame, elementsMap)
         .map((element) => signatureByElementId.get(element.id)!)
         .join("|"),
     ]),
   );
 };
+
+export const getPresentationFramePreviewElements = (
+  elements: readonly ExcalidrawElement[],
+  frame: NonDeleted<ExcalidrawFrameElement>,
+  elementsMap = arrayToMap(elements),
+) =>
+  getElementsVisibleInFrame(
+    elements,
+    frame,
+    elementsMap,
+  ) as NonDeletedExcalidrawElement[];
 
 export const reorderPresentationFrames = (
   frames: readonly NonDeleted<ExcalidrawFrameElement>[],
@@ -304,11 +323,68 @@ export const getAdjacentPresentationFrame = (
 };
 
 export const getPresentationFrameDuration = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-) =>
-  getFramePresentationData(frame)?.transition?.durationMs ??
-  DEFAULT_PRESENTATION_TRANSITION_DURATION;
+  frame: Pick<ExcalidrawFrameElement, "customData"> & PresentationFrameGeometry,
+  previousFrame?: PresentationFrameGeometry | null,
+) => {
+  const customDuration =
+    getFramePresentationData(frame)?.transition?.durationMs;
+
+  if (customDuration !== undefined) {
+    return customDuration;
+  }
+
+  if (!previousFrame || previousFrame.id === frame.id) {
+    return DEFAULT_PRESENTATION_TRANSITION_DURATION;
+  }
+
+  return getAdaptivePresentationFrameDuration(previousFrame, frame);
+};
+
+export const getAdaptivePresentationFrameDuration = (
+  previousFrame: PresentationFrameGeometry,
+  nextFrame: PresentationFrameGeometry,
+) => {
+  const previousCenterX = previousFrame.x + previousFrame.width / 2;
+  const previousCenterY = previousFrame.y + previousFrame.height / 2;
+  const nextCenterX = nextFrame.x + nextFrame.width / 2;
+  const nextCenterY = nextFrame.y + nextFrame.height / 2;
+  const centerDistance = Math.hypot(
+    nextCenterX - previousCenterX,
+    nextCenterY - previousCenterY,
+  );
+  const previousDiagonal = Math.hypot(
+    previousFrame.width,
+    previousFrame.height,
+  );
+  const nextDiagonal = Math.hypot(nextFrame.width, nextFrame.height);
+  const averageDiagonal = Math.max((previousDiagonal + nextDiagonal) / 2, 1);
+  const distanceFactor = Math.min(centerDistance / averageDiagonal, 2.25);
+  const scaleFactor = Math.min(
+    Math.abs(
+      Math.log(Math.max(nextDiagonal, 1) / Math.max(previousDiagonal, 1)),
+    ),
+    1.5,
+  );
+  const duration =
+    MIN_PRESENTATION_TRANSITION_DURATION +
+    distanceFactor * 300 +
+    scaleFactor * 220;
+
+  return (
+    Math.round(Math.min(MAX_PRESENTATION_TRANSITION_DURATION, duration) / 50) *
+    50
+  );
+};
 
 export const getPresentationFrameTitle = (
   frame: Pick<ExcalidrawFrameElement, "customData" | "name">,
 ) => getFramePresentationData(frame)?.title ?? frame.name ?? null;
+
+export const getDefaultPresentationFrameLabel = (index: number) =>
+  `${index + 1}`;
+
+export const getPresentationFrameLabel = (
+  frame: Pick<ExcalidrawFrameElement, "customData" | "name">,
+  index: number,
+) =>
+  getPresentationFrameTitle(frame) ?? getDefaultPresentationFrameLabel(index);

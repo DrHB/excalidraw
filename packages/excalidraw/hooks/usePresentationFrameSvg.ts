@@ -7,7 +7,8 @@ import type {
   NonDeleted,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
-import type { BinaryFiles } from "../types";
+import type { AppState, BinaryFiles } from "../types";
+import { getPresentationFramePreviewElements } from "../presentation/framePresentation";
 
 type PresentationFrameSvgCacheEntry = {
   signature: string;
@@ -22,17 +23,21 @@ const presentationFrameSvgCache = new Map<
 export const usePresentationFrameSvg = ({
   enabled,
   elements,
+  exportWithDarkMode,
   files,
   frame,
   ref,
   signature,
+  viewBackgroundColor,
 }: {
   enabled: boolean;
   elements: readonly NonDeletedExcalidrawElement[];
+  exportWithDarkMode: boolean;
   files: BinaryFiles;
   frame: NonDeleted<ExcalidrawFrameElement>;
   ref: React.RefObject<HTMLDivElement | null>;
   signature: string;
+  viewBackgroundColor: AppState["viewBackgroundColor"];
 }) => {
   const [svg, setSvg] = useState<SVGSVGElement>();
 
@@ -50,11 +55,16 @@ export const usePresentationFrameSvg = ({
     let cancelled = false;
 
     (async () => {
-      const exportedSvg = await exportToSvg({
+      const previewElements = getPresentationFramePreviewElements(
         elements,
+        frame,
+      );
+      const exportedSvg = await exportToSvg({
+        elements: previewElements,
         appState: {
-          exportBackground: false,
-          viewBackgroundColor: COLOR_PALETTE.white,
+          exportBackground: true,
+          exportWithDarkMode,
+          viewBackgroundColor: viewBackgroundColor || COLOR_PALETTE.white,
         },
         exportPadding: 0,
         exportingFrame: frame,
@@ -80,7 +90,15 @@ export const usePresentationFrameSvg = ({
     return () => {
       cancelled = true;
     };
-  }, [elements, enabled, files, frame, signature]);
+  }, [
+    elements,
+    enabled,
+    exportWithDarkMode,
+    files,
+    frame,
+    signature,
+    viewBackgroundColor,
+  ]);
 
   useEffect(() => {
     const node = ref.current;

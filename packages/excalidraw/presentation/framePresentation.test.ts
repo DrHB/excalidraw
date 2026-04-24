@@ -4,10 +4,15 @@ import {
   buildFramePresentationCustomData,
   collectPresentationFrames,
   getAdjacentPresentationFrame,
+  getAdaptivePresentationFrameDuration,
   getOrderedPresentationFrames,
+  getPresentationFrameDuration,
+  getPresentationFrameLabel,
   getPresentationFramePreviewSignatures,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
+  MAX_PRESENTATION_TRANSITION_DURATION,
+  MIN_PRESENTATION_TRANSITION_DURATION,
   movePresentationFrame,
   reorderPresentationFrames,
 } from "./framePresentation";
@@ -46,6 +51,58 @@ describe("framePresentation helpers", () => {
       frameA.id,
       frameC.id,
     ]);
+  });
+
+  it("uses sequential fallback labels for unnamed frames", () => {
+    const frameA = createFrame();
+    const frameB = createFrame("Custom");
+
+    expect(getPresentationFrameLabel(frameA, 0)).toBe("1");
+    expect(getPresentationFrameLabel(frameB, 1)).toBe("Custom");
+  });
+
+  it("adapts transition duration to frame distance and scale", () => {
+    const frameA = createFrame("A");
+    const nearbyFrame = createFrame("B", 230);
+    const farFrame = createFrame("C", 1600);
+    const tinyFrame = newFrameElement({
+      x: 1700,
+      y: 0,
+      width: 60,
+      height: 40,
+      name: "Tiny",
+    });
+
+    const nearbyDuration = getAdaptivePresentationFrameDuration(
+      frameA,
+      nearbyFrame,
+    );
+    const farDuration = getAdaptivePresentationFrameDuration(frameA, farFrame);
+    const scaleDuration = getAdaptivePresentationFrameDuration(
+      frameA,
+      tinyFrame,
+    );
+
+    expect(nearbyDuration).toBeGreaterThanOrEqual(
+      MIN_PRESENTATION_TRANSITION_DURATION,
+    );
+    expect(farDuration).toBeGreaterThan(nearbyDuration);
+    expect(scaleDuration).toBeGreaterThan(nearbyDuration);
+    expect(farDuration).toBeLessThanOrEqual(
+      MAX_PRESENTATION_TRANSITION_DURATION,
+    );
+    expect(scaleDuration).toBeLessThanOrEqual(
+      MAX_PRESENTATION_TRANSITION_DURATION,
+    );
+  });
+
+  it("honors explicit transition duration metadata", () => {
+    const frameA = createFrame("A");
+    const frameB = withPresentationData(createFrame("B", 1000), {
+      transition: { durationMs: 420 },
+    });
+
+    expect(getPresentationFrameDuration(frameB, frameA)).toBe(420);
   });
 
   it("uses scene order when metadata order is duplicated or missing", () => {

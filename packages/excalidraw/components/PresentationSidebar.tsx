@@ -12,6 +12,7 @@ import {
   DEFAULT_SIDEBAR,
   KEYS,
   PRESENTATION_SIDEBAR_TAB,
+  THEME,
 } from "@excalidraw/common";
 import { selectGroupsForSelectedElements } from "@excalidraw/element";
 
@@ -19,7 +20,6 @@ import { t } from "../i18n";
 import { usePresentationFrameSvg } from "../hooks/usePresentationFrameSvg";
 import {
   buildFramePresentationCustomData,
-  DEFAULT_PRESENTATION_TRANSITION_DURATION,
   getPresentationFramePreviewSignatures,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
@@ -101,11 +101,15 @@ const useVisibleInViewport = () => {
 const PresentationFrameThumbnail = ({
   frame,
   elements,
+  exportWithDarkMode,
   signature,
+  viewBackgroundColor,
 }: {
   frame: PresentationFrame;
   elements: readonly NonDeletedExcalidrawElement[];
+  exportWithDarkMode: boolean;
   signature: string;
+  viewBackgroundColor: AppState["viewBackgroundColor"];
 }) => {
   const app = useApp();
   const { ref, isVisible } = useVisibleInViewport();
@@ -114,10 +118,12 @@ const PresentationFrameThumbnail = ({
   usePresentationFrameSvg({
     enabled: isVisible,
     elements,
+    exportWithDarkMode,
     files: app.files,
     frame,
     ref: svgRef,
     signature,
+    viewBackgroundColor,
   });
 
   return (
@@ -130,6 +136,7 @@ const PresentationFrameThumbnail = ({
 const PresentationSidebarRow = ({
   canDrag,
   elements,
+  exportWithDarkMode,
   frame,
   index,
   isCurrent,
@@ -145,9 +152,11 @@ const PresentationSidebarRow = ({
   onToggleHidden,
   presentationActive,
   signature,
+  viewBackgroundColor,
 }: {
   canDrag: boolean;
   elements: readonly NonDeletedExcalidrawElement[];
+  exportWithDarkMode: boolean;
   frame: PresentationFrame;
   index: number;
   isCurrent: boolean;
@@ -172,6 +181,7 @@ const PresentationSidebarRow = ({
   onToggleHidden: (frame: PresentationFrame, hidden: boolean) => void;
   presentationActive: boolean;
   signature: string;
+  viewBackgroundColor: AppState["viewBackgroundColor"];
 }) => {
   const derivedTitle = getPresentationFrameTitle(frame) ?? "";
   const [draftTitle, setDraftTitle] = useState(derivedTitle);
@@ -220,8 +230,10 @@ const PresentationSidebarRow = ({
       <div className="PresentationSidebar__order">{index + 1}</div>
       <PresentationFrameThumbnail
         elements={elements}
+        exportWithDarkMode={exportWithDarkMode}
         frame={frame}
         signature={signature}
+        viewBackgroundColor={viewBackgroundColor}
       />
       <div className="PresentationSidebar__content">
         <div className="PresentationSidebar__titleRow">
@@ -237,7 +249,7 @@ const PresentationSidebarRow = ({
               }
               event.stopPropagation();
             }}
-            placeholder={t("presentation.untitledFrame")}
+            placeholder={t("presentation.addFrameTitle")}
             value={draftTitle}
           />
           {isHidden && (
@@ -316,6 +328,7 @@ export const PresentationSidebar = memo(() => {
     () => getPresentationFramePreviewSignatures(elements),
     [elements],
   );
+  const previewAppearanceSignature = `${appState.theme}:${appState.viewBackgroundColor}`;
   const canDrag = editorInterface.formFactor !== "phone";
   const getDraggedFrameId = useCallback(
     (event: Pick<React.DragEvent, "dataTransfer">) =>
@@ -337,16 +350,19 @@ export const PresentationSidebar = memo(() => {
 
   const scrollToFrame = useCallback(
     (frame: PresentationFrame, animate = true) => {
+      const previousFrame =
+        orderedFrames.find(
+          (orderedFrame) => orderedFrame.id === currentFrameId,
+        ) ?? null;
+
       app.scrollToContent(frame, {
         animate,
-        duration:
-          getPresentationFrameDuration(frame) ??
-          DEFAULT_PRESENTATION_TRANSITION_DURATION,
+        duration: getPresentationFrameDuration(frame, previousFrame),
         fitToViewport: true,
         viewportZoomFactor: PRESENTATION_VIEWPORT_ZOOM_FACTOR,
       });
     },
-    [app],
+    [app, currentFrameId, orderedFrames],
   );
 
   const setPresentationState = useCallback(
@@ -543,6 +559,7 @@ export const PresentationSidebar = memo(() => {
               <PresentationSidebarRow
                 canDrag={canDrag}
                 elements={elements}
+                exportWithDarkMode={appState.theme === THEME.DARK}
                 frame={frame}
                 index={index}
                 isCurrent={frame.id === currentFrameId}
@@ -565,7 +582,10 @@ export const PresentationSidebar = memo(() => {
                   updateFrameMetadata(targetFrame, { hidden })
                 }
                 presentationActive={appState.presentationMode.active}
-                signature={previewSignatures.get(frame.id) ?? frame.id}
+                signature={`${
+                  previewSignatures.get(frame.id) ?? frame.id
+                }:${previewAppearanceSignature}`}
+                viewBackgroundColor={appState.viewBackgroundColor}
               />
             ))}
           </div>
