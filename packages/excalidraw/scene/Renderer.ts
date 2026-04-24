@@ -11,6 +11,7 @@ import type {
 import type { Scene } from "@excalidraw/element";
 
 import { renderStaticSceneThrottled } from "../renderer/staticScene";
+import { getPresentationRevealRenderState } from "../presentation/framePresentation";
 
 import type { RenderableElementsMap } from "./types";
 
@@ -70,15 +71,23 @@ export class Renderer {
       elements,
       editingTextElement,
       newElementId,
+      presentationMode,
     }: {
       elements: readonly NonDeletedExcalidrawElement[];
       editingTextElement: AppState["editingTextElement"];
       newElementId: ExcalidrawElement["id"] | undefined;
+      presentationMode: AppState["presentationMode"];
     }) => {
       const elementsMap = toBrandedType<RenderableElementsMap>(new Map());
+      const { hiddenElementIds, opacityByElementId } =
+        getPresentationRevealRenderState(elements, presentationMode);
 
       for (const element of elements) {
         if (newElementId === element.id) {
+          continue;
+        }
+
+        if (hiddenElementIds.has(element.id)) {
           continue;
         }
 
@@ -89,7 +98,20 @@ export class Renderer {
           editingTextElement.type !== "text" ||
           element.id !== editingTextElement.id
         ) {
-          elementsMap.set(element.id, element);
+          const opacityFactor = opacityByElementId.get(element.id);
+
+          elementsMap.set(
+            element.id,
+            opacityFactor === undefined
+              ? element
+              : {
+                  ...element,
+                  opacity: Math.max(
+                    0,
+                    Math.min(100, Math.round(element.opacity * opacityFactor)),
+                  ),
+                },
+          );
         }
       }
       return elementsMap;
@@ -106,6 +128,7 @@ export class Renderer {
         width,
         editingTextElement,
         newElementId,
+        presentationMode,
         // cache-invalidation nonce
         sceneNonce: _sceneNonce,
       }: {
@@ -120,6 +143,7 @@ export class Renderer {
         /** note: first render of newElement will always bust the cache
          * (we'd have to prefilter elements outside of this function) */
         newElementId: ExcalidrawElement["id"] | undefined;
+        presentationMode: AppState["presentationMode"];
         sceneNonce: ReturnType<InstanceType<typeof Scene>["getSceneNonce"]>;
       }) => {
         const elements = this.scene.getNonDeletedElements();
@@ -128,6 +152,7 @@ export class Renderer {
           elements,
           editingTextElement,
           newElementId,
+          presentationMode,
         });
 
         const visibleElements = getVisibleCanvasElements({

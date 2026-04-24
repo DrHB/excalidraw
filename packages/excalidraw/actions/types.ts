@@ -143,6 +143,8 @@ export type ActionName =
   | "linkToElement"
   | "cropEditor"
   | "wrapSelectionInFrame"
+  | "addPresentationReveal"
+  | "removePresentationReveal"
   | "toggleLassoTool"
   | "toggleShapeSwitch"
   | "togglePolygon";

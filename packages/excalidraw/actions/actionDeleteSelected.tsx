@@ -12,6 +12,7 @@ import { getContainerElement } from "@excalidraw/element";
 import {
   isBoundToContainer,
   isElbowArrow,
+  isFrameElement,
   isFrameLikeElement,
 } from "@excalidraw/element";
 import { getFrameChildren } from "@excalidraw/element";
@@ -26,6 +27,11 @@ import { CaptureUpdateAction } from "@excalidraw/element";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import { t } from "../i18n";
+import {
+  buildFramePresentationCustomData,
+  collectPresentationFrames,
+  getPresentationRevealRemovalUpdatesForElements,
+} from "../presentation/framePresentation";
 import { getSelectedElements, isSomeElementSelected } from "../scene";
 import { TrashIcon } from "../components/icons";
 import { ToolButton } from "../components/ToolButton";
@@ -270,6 +276,40 @@ export const actionDeleteSelected = register({
         },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       };
+    }
+
+    const selectedElements = app.scene.getSelectedElements(appState);
+
+    if (!selectedElements.some((element) => isFrameLikeElement(element))) {
+      const elementsMap = app.scene.getNonDeletedElementsMap();
+      const revealRemovalUpdates =
+        getPresentationRevealRemovalUpdatesForElements(
+          collectPresentationFrames(app.scene.getElementsIncludingDeleted()),
+          selectedElements,
+          elementsMap,
+        );
+
+      if (revealRemovalUpdates.length) {
+        for (const { frame, reveals } of revealRemovalUpdates) {
+          const currentFrame = elementsMap.get(frame.id);
+
+          if (!currentFrame || !isFrameElement(currentFrame)) {
+            continue;
+          }
+
+          app.scene.mutateElement(currentFrame, {
+            customData: buildFramePresentationCustomData(currentFrame, {
+              reveals,
+            }),
+          });
+        }
+
+        return {
+          elements,
+          appState,
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        };
+      }
     }
 
     let { elements: nextElements, appState: nextAppState } =

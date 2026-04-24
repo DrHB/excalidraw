@@ -15,6 +15,8 @@ import { useUIAppState } from "../context/ui-appState";
 
 import "../components/dropdownMenu/DropdownMenu.scss";
 
+import { t } from "../i18n";
+
 import { useExcalidrawSetAppState } from "./App";
 import { LibraryMenu } from "./LibraryMenu";
 import { PresentationSidebar } from "./PresentationSidebar";
@@ -22,7 +24,6 @@ import { SearchMenu } from "./SearchMenu";
 import { Sidebar } from "./Sidebar/Sidebar";
 import { withInternalFallback } from "./hoc/withInternalFallback";
 import { LibraryIcon, presentationIcon, searchIcon } from "./icons";
-import { t } from "../i18n";
 
 import type { SidebarProps, SidebarTriggerProps } from "./Sidebar/common";
 

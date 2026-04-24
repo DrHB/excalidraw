@@ -28,6 +28,14 @@
     }
   }
 
+  .FramePresentation__toolButton--selected {
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .FramePresentation__effectDropdown {
+    min-width: 11rem;
+  }
+
   .FramePresentation__overlay {
     position: absolute;
     top: 1rem;

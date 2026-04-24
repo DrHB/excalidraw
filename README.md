@@ -30,6 +30,9 @@ This is an experimental fork. For the stable upstream project, use
 - Numbered frame labels that match the presentation order
 - Hide/show frames from the presentation path
 - Smooth adaptive pan/zoom transitions between frames
+- Toolbar effect dropdown for selected frame-owned objects
+- Manual Appear and Disappear effects during presentation mode
+- Ordered reveal/effect rows under each frame in the presentation sidebar
 - Next/previous navigation during presentation mode
 - Jump-to-frame controls from the sidebar and presentation overlay
 - Core Excalidraw tools: shapes, arrows, text, free draw, images, eraser, zoom,

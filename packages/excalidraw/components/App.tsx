@@ -336,6 +336,7 @@ import {
   actionWrapSelectionInFrame,
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
+import { actionRemovePresentationReveal } from "../actions/actionPresentation";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
@@ -2101,6 +2102,7 @@ class App extends React.Component<AppProps, AppState> {
         width: this.state.width,
         editingTextElement: this.state.editingTextElement,
         newElementId: this.state.newElement?.id,
+        presentationMode: this.state.presentationMode,
       });
     this.visibleElements = visibleElements;
 
@@ -12552,6 +12554,19 @@ class App extends React.Component<AppProps, AppState> {
             actionBringToFront,
           ]
         : [];
+    const presentationRevealActions = [actionRemovePresentationReveal].filter(
+      (action) =>
+        action.predicate?.(
+          this.scene.getElementsIncludingDeleted(),
+          this.state,
+          this.props,
+          this,
+        ),
+    );
+    const presentationRevealMenuItems: ContextMenuItems =
+      presentationRevealActions.length > 0
+        ? [CONTEXT_MENU_SEPARATOR, ...presentationRevealActions]
+        : [];
 
     return [
       CONTEXT_MENU_SEPARATOR,
@@ -12562,6 +12577,7 @@ class App extends React.Component<AppProps, AppState> {
       actionSelectAllElementsInFrame,
       actionRemoveAllElementsFromFrame,
       actionWrapSelectionInFrame,
+      ...presentationRevealMenuItems,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
       CONTEXT_MENU_SEPARATOR,

@@ -276,6 +276,12 @@ export type PresentationModeState = {
   active: boolean;
   currentFrameId: ExcalidrawElement["id"] | null;
   sourceViewModeEnabled: boolean;
+  visibleRevealCount: number;
+  revealAnimation: {
+    elementId: ExcalidrawElement["id"];
+    progress: number;
+    durationMs: number;
+  } | null;
 };
 
 export interface AppState {

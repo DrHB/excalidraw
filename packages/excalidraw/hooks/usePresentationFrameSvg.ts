@@ -7,8 +7,10 @@ import type {
   NonDeleted,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
-import type { AppState, BinaryFiles } from "../types";
+
 import { getPresentationFramePreviewElements } from "../presentation/framePresentation";
+
+import type { AppState, BinaryFiles } from "../types";
 
 type PresentationFrameSvgCacheEntry = {
   signature: string;
