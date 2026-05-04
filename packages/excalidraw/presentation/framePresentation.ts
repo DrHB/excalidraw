@@ -1,8 +1,11 @@
-import { arrayToMap } from "@excalidraw/common";
+import { arrayToMap, easeOut } from "@excalidraw/common";
 import {
   getBoundTextElement,
+  getContainerElement,
   getElementsVisibleInFrame,
   isFrameElement,
+  isFrameLikeElement,
+  isTextElement,
 } from "@excalidraw/element";
 
 import type {
@@ -10,49 +13,33 @@ import type {
   ExcalidrawElement,
   ExcalidrawFrameElement,
   NonDeleted,
+  NonDeletedElementsMap,
+  NonDeletedSceneElementsMap,
+  NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
 export const PRESENTATION_CUSTOM_DATA_KEY = "storyplanePresentation";
 export const PRESENTATION_METADATA_VERSION = 1 as const;
-export const DEFAULT_PRESENTATION_TRANSITION_DURATION = 650;
-export const DEFAULT_PRESENTATION_REVEAL_DURATION = 350;
+export const DEFAULT_PRESENTATION_TRANSITION_DURATION = 950;
+export const MIN_PRESENTATION_TRANSITION_DURATION = 850;
+export const MAX_PRESENTATION_TRANSITION_DURATION = 1800;
 export const PRESENTATION_VIEWPORT_ZOOM_FACTOR = 0.86;
+export const PRESENTATION_REVEAL_DURATION = 220;
 
-export type PresentationRevealEffect =
+export type StoryplanePresentationRevealEffect =
+  | "fade"
   | "none"
   | "appear"
   | "disappear"
   | "fadeIn"
   | "fadeOut";
 
-export type ActivePresentationRevealEffect = Exclude<
-  PresentationRevealEffect,
-  "none"
->;
-
 export type StoryplanePresentationReveal = {
   elementId: string;
   order: number;
-  effect: PresentationRevealEffect;
+  effect: StoryplanePresentationRevealEffect;
   durationMs?: number;
-};
-
-export type PresentationRevealAnimation = {
-  frameId: ExcalidrawFrameElement["id"];
-  order: number;
-  direction: -1 | 1;
-  durationMs: number;
-  progress: number;
-};
-
-export type PresentationRevealStep = {
-  order: number;
-  reveals: Array<
-    Omit<StoryplanePresentationReveal, "effect"> & {
-      effect: ActivePresentationRevealEffect;
-    }
-  >;
-};
+} & Record<string, any>;
 
 export type StoryplanePresentationData = {
   version: typeof PRESENTATION_METADATA_VERSION;
@@ -76,6 +63,44 @@ export type StoryplanePresentationUpdate = {
 
 export type PresentationFrameDropPosition = "before" | "after";
 
+export type PresentationRevealItem = {
+  reveal: StoryplanePresentationReveal;
+  element: NonDeletedExcalidrawElement | null;
+  isValid: boolean;
+  reason?: "duplicate" | "missing" | "moved";
+};
+
+export type PresentationRevealSelection = {
+  frame: NonDeleted<ExcalidrawFrameElement>;
+  elements: readonly NonDeletedExcalidrawElement[];
+  elementIds: readonly ExcalidrawElement["id"][];
+};
+
+export type PresentationRevealPlaybackState = {
+  active: boolean;
+  currentFrameId: ExcalidrawElement["id"] | null;
+  visibleRevealCount: number;
+  revealAnimation: {
+    elementId: ExcalidrawElement["id"];
+    progress: number;
+    durationMs: number;
+  } | null;
+};
+
+export type PresentationRevealRemovalUpdate = {
+  frame: NonDeleted<ExcalidrawFrameElement>;
+  reveals: StoryplanePresentationReveal[];
+};
+
+type PresentationFrameGeometry = Pick<
+  ExcalidrawFrameElement,
+  "id" | "x" | "y" | "width" | "height"
+>;
+type PresentationElementsMap =
+  | ElementsMap
+  | NonDeletedElementsMap
+  | NonDeletedSceneElementsMap;
+
 const isRecord = (value: unknown): value is Record<string, any> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -90,7 +115,9 @@ const normalizeNonNegativeNumber = (value: unknown) =>
 const normalizeTitle = (value: unknown) =>
   typeof value === "string" ? value.trim() || undefined : undefined;
 
-const normalizeRevealEffect = (value: unknown): PresentationRevealEffect => {
+const normalizeRevealEffect = (
+  value: unknown,
+): StoryplanePresentationRevealEffect => {
   switch (value) {
     case "fade":
       return "fadeIn";
@@ -101,55 +128,45 @@ const normalizeRevealEffect = (value: unknown): PresentationRevealEffect => {
     case "none":
       return value;
     default:
-      return "none";
+      return "fadeIn";
   }
 };
 
-const compactRevealOrders = (
-  reveals: readonly StoryplanePresentationReveal[],
-): StoryplanePresentationReveal[] => {
-  const sortedOrders = Array.from(
-    new Set(reveals.map((reveal) => reveal.order)),
-  )
-    .filter((order) => Number.isFinite(order))
-    .sort((left, right) => left - right);
-  const orderMap = new Map(
-    sortedOrders.map((order, index) => [order, index] as const),
-  );
-
-  return reveals.map((reveal) => ({
-    ...reveal,
-    order: orderMap.get(reveal.order) ?? 0,
-  }));
-};
-
-const normalizeReveals = (value: unknown): StoryplanePresentationReveal[] => {
+const normalizePresentationReveals = (
+  value: unknown,
+): StoryplanePresentationReveal[] | undefined => {
   if (!Array.isArray(value)) {
-    return [];
+    return undefined;
   }
 
-  const reveals = value.flatMap((rawReveal, index) => {
-    if (!isRecord(rawReveal) || typeof rawReveal.elementId !== "string") {
+  const reveals = value.flatMap((raw, index) => {
+    if (!isRecord(raw) || typeof raw.elementId !== "string") {
       return [];
     }
 
-    const effect = normalizeRevealEffect(rawReveal.effect);
+    const durationMs = normalizeNonNegativeNumber(raw.durationMs);
+    const reveal: StoryplanePresentationReveal = {
+      ...raw,
+      elementId: raw.elementId,
+      order:
+        normalizeFiniteNumber(raw.order) ?? Number.MAX_SAFE_INTEGER + index,
+      effect: normalizeRevealEffect(raw.effect),
+    };
 
-    if (effect === "none") {
-      return [];
+    if (durationMs === undefined) {
+      delete reveal.durationMs;
+    } else {
+      reveal.durationMs = durationMs;
     }
 
-    return [
-      {
-        elementId: rawReveal.elementId,
-        order: normalizeFiniteNumber(rawReveal.order) ?? index,
-        effect,
-        durationMs: normalizeNonNegativeNumber(rawReveal.durationMs),
-      },
-    ];
+    if (!Number.isFinite(reveal.order)) {
+      reveal.order = Number.MAX_SAFE_INTEGER + index;
+    }
+
+    return [reveal];
   });
 
-  return compactRevealOrders(reveals);
+  return reveals.length ? reveals : undefined;
 };
 
 const getRawPresentationData = (
@@ -174,7 +191,6 @@ export const getFramePresentationData = (
         durationMs: normalizeNonNegativeNumber(raw.transition.durationMs),
       }
     : undefined;
-  const reveals = normalizeReveals(raw.reveals);
 
   return {
     version: PRESENTATION_METADATA_VERSION,
@@ -182,7 +198,7 @@ export const getFramePresentationData = (
     title: normalizeTitle(raw.title),
     hidden: raw.hidden === true ? true : undefined,
     transition,
-    reveals: reveals.length ? reveals : undefined,
+    reveals: normalizePresentationReveals(raw.reveals),
   };
 };
 
@@ -196,6 +212,13 @@ export const buildFramePresentationCustomData = (
     ...currentPresentationData,
     version: PRESENTATION_METADATA_VERSION,
   };
+  const currentReveals = normalizePresentationReveals(
+    currentPresentationData.reveals,
+  );
+
+  if (currentReveals) {
+    nextPresentationData.reveals = currentReveals;
+  }
 
   if ("order" in updates) {
     nextPresentationData.order = normalizeFiniteNumber(updates.order);
@@ -228,246 +251,14 @@ export const buildFramePresentationCustomData = (
   }
 
   if ("reveals" in updates) {
-    const normalizedReveals = normalizeReveals(updates.reveals);
-    nextPresentationData.reveals = normalizedReveals.length
-      ? normalizedReveals
-      : undefined;
+    nextPresentationData.reveals =
+      normalizePresentationReveals(updates.reveals) ?? [];
   }
 
   return {
     ...currentCustomData,
     [PRESENTATION_CUSTOM_DATA_KEY]: nextPresentationData,
   };
-};
-
-export const updatePresentationFrameReveals = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-  elementIds: readonly ExcalidrawElement["id"][],
-  effect: PresentationRevealEffect,
-): StoryplanePresentationReveal[] | undefined => {
-  const targetElementIds = Array.from(new Set(elementIds));
-
-  if (!targetElementIds.length) {
-    return getFramePresentationData(frame)?.reveals;
-  }
-
-  const targetElementIdSet = new Set(targetElementIds);
-  const currentReveals = getFramePresentationData(frame)?.reveals ?? [];
-  const targetRevealByElementId = new Map(
-    currentReveals
-      .filter((reveal) => targetElementIdSet.has(reveal.elementId))
-      .map((reveal) => [reveal.elementId, reveal] as const),
-  );
-  const targetRevealOrders = new Set(
-    targetElementIds.flatMap((elementId) => {
-      const reveal = targetRevealByElementId.get(elementId);
-      return reveal ? [reveal.order] : [];
-    }),
-  );
-  const preservedReveals = currentReveals.filter(
-    (reveal) => !targetElementIdSet.has(reveal.elementId),
-  );
-
-  if (effect === "none") {
-    const nextReveals = compactRevealOrders(preservedReveals);
-    return nextReveals.length ? nextReveals : undefined;
-  }
-
-  const nextOrder =
-    targetRevealByElementId.size === targetElementIds.length &&
-    targetRevealOrders.size === 1
-      ? targetRevealOrders.values().next().value!
-      : preservedReveals.length
-      ? Math.max(...preservedReveals.map((reveal) => reveal.order)) + 1
-      : 0;
-  const nextReveals = compactRevealOrders([
-    ...preservedReveals,
-    ...targetElementIds.map((elementId) => ({
-      elementId,
-      order: nextOrder,
-      effect,
-      durationMs:
-        effect === "fadeIn" || effect === "fadeOut"
-          ? DEFAULT_PRESENTATION_REVEAL_DURATION
-          : undefined,
-    })),
-  ]);
-
-  return nextReveals.length ? nextReveals : undefined;
-};
-
-export const getPresentationRevealEffectForElements = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-  elementIds: readonly ExcalidrawElement["id"][],
-): PresentationRevealEffect | null => {
-  if (!elementIds.length) {
-    return "none";
-  }
-
-  const revealByElementId = new Map(
-    (getFramePresentationData(frame)?.reveals ?? []).map((reveal) => [
-      reveal.elementId,
-      reveal.effect,
-    ]),
-  );
-  const effects = new Set(
-    elementIds.map((elementId) => revealByElementId.get(elementId) ?? "none"),
-  );
-
-  return effects.size === 1 ? effects.values().next().value! : null;
-};
-
-export const getPresentationRevealSteps = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-): PresentationRevealStep[] => {
-  const revealGroups = new Map<number, PresentationRevealStep["reveals"]>();
-
-  for (const reveal of getFramePresentationData(frame)?.reveals ?? []) {
-    if (reveal.effect === "none") {
-      continue;
-    }
-
-    const reveals = revealGroups.get(reveal.order) ?? [];
-    reveals.push({
-      ...reveal,
-      effect: reveal.effect,
-    });
-    revealGroups.set(reveal.order, reveals);
-  }
-
-  return Array.from(revealGroups.entries())
-    .sort(([leftOrder], [rightOrder]) => leftOrder - rightOrder)
-    .map(([order, reveals], index) => ({
-      order: index,
-      reveals: reveals.map((reveal) => ({ ...reveal, order: index })),
-    }));
-};
-
-export const reorderPresentationFrameRevealSteps = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-  sourceOrder: number,
-  targetOrder: number,
-  position: PresentationFrameDropPosition = "before",
-): StoryplanePresentationReveal[] | undefined => {
-  if (sourceOrder === targetOrder) {
-    return getFramePresentationData(frame)?.reveals;
-  }
-
-  const revealSteps = getPresentationRevealSteps(frame);
-  const sourceIndex = revealSteps.findIndex(
-    (step) => step.order === sourceOrder,
-  );
-  const targetIndex = revealSteps.findIndex(
-    (step) => step.order === targetOrder,
-  );
-
-  if (sourceIndex < 0 || targetIndex < 0) {
-    return getFramePresentationData(frame)?.reveals;
-  }
-
-  const nextRevealSteps = [...revealSteps];
-  const [movedStep] = nextRevealSteps.splice(sourceIndex, 1);
-  const targetIndexInNext = nextRevealSteps.findIndex(
-    (step) => step.order === targetOrder,
-  );
-
-  if (!movedStep || targetIndexInNext < 0) {
-    return getFramePresentationData(frame)?.reveals;
-  }
-
-  const insertionIndex =
-    position === "after" ? targetIndexInNext + 1 : targetIndexInNext;
-
-  nextRevealSteps.splice(insertionIndex, 0, movedStep);
-
-  const nextReveals = nextRevealSteps.flatMap((step, order) =>
-    step.reveals.map((reveal) => ({
-      ...reveal,
-      order,
-    })),
-  );
-
-  return nextReveals.length ? nextReveals : undefined;
-};
-
-const isFadeRevealEffect = (effect: ActivePresentationRevealEffect) =>
-  effect === "fadeIn" || effect === "fadeOut";
-
-const isEntranceRevealEffect = (effect: ActivePresentationRevealEffect) =>
-  effect === "appear" || effect === "fadeIn";
-
-export const getPresentationElementOpacityMap = (
-  frame: Pick<ExcalidrawFrameElement, "customData" | "id">,
-  elementsMap: ElementsMap,
-  presentationMode: {
-    active: boolean;
-    currentFrameId: ExcalidrawElement["id"] | null;
-    currentRevealStep: number;
-    revealAnimation: PresentationRevealAnimation | null;
-  },
-): Map<ExcalidrawElement["id"], number> | null => {
-  if (
-    !presentationMode.active ||
-    presentationMode.currentFrameId !== frame.id
-  ) {
-    return null;
-  }
-
-  const revealSteps = getPresentationRevealSteps(frame);
-
-  if (!revealSteps.length) {
-    return null;
-  }
-
-  const opacityByElementId = new Map<ExcalidrawElement["id"], number>();
-  const currentRevealStep = presentationMode.currentRevealStep;
-  const animation =
-    presentationMode.revealAnimation?.frameId === frame.id
-      ? presentationMode.revealAnimation
-      : null;
-
-  for (const step of revealSteps) {
-    for (const reveal of step.reveals) {
-      const hasAppliedStep = step.order <= currentRevealStep;
-      let opacity = isEntranceRevealEffect(reveal.effect)
-        ? hasAppliedStep
-          ? 1
-          : 0
-        : hasAppliedStep
-        ? 0
-        : 1;
-
-      if (
-        animation?.order === step.order &&
-        isFadeRevealEffect(reveal.effect)
-      ) {
-        const progress = Math.min(Math.max(animation.progress, 0), 1);
-        opacity =
-          animation.direction > 0
-            ? reveal.effect === "fadeIn"
-              ? progress
-              : 1 - progress
-            : reveal.effect === "fadeIn"
-            ? 1 - progress
-            : progress;
-      }
-
-      if (opacity !== 1) {
-        opacityByElementId.set(reveal.elementId, opacity);
-
-        const element = elementsMap.get(reveal.elementId);
-        const boundTextElement = element
-          ? getBoundTextElement(element, elementsMap)
-          : null;
-
-        if (boundTextElement) {
-          opacityByElementId.set(boundTextElement.id, opacity);
-        }
-      }
-    }
-  }
-
-  return opacityByElementId.size ? opacityByElementId : null;
 };
 
 export const collectPresentationFrames = (
@@ -525,11 +316,553 @@ export const getPresentationFramePreviewSignatures = (
   return new Map(
     collectPresentationFrames(elements).map((frame) => [
       frame.id,
-      getElementsVisibleInFrame(elements, frame, elementsMap)
+      getPresentationFramePreviewElements(elements, frame, elementsMap)
         .map((element) => signatureByElementId.get(element.id)!)
         .join("|"),
     ]),
   );
+};
+
+export const getPresentationFramePreviewElements = (
+  elements: readonly ExcalidrawElement[],
+  frame: NonDeleted<ExcalidrawFrameElement>,
+  elementsMap = arrayToMap(elements),
+) =>
+  getElementsVisibleInFrame(
+    elements,
+    frame,
+    elementsMap,
+  ) as NonDeletedExcalidrawElement[];
+
+const getSortedPresentationReveals = (
+  reveals: readonly StoryplanePresentationReveal[],
+  elements: readonly ExcalidrawElement[] = [],
+) => {
+  const sceneOrder = new Map(
+    elements.map((element, index) => [element.id, index] as const),
+  );
+
+  return [...reveals].sort((left, right) => {
+    if (left.order !== right.order) {
+      return left.order - right.order;
+    }
+
+    const leftSceneOrder =
+      sceneOrder.get(left.elementId) ?? Number.MAX_SAFE_INTEGER;
+    const rightSceneOrder =
+      sceneOrder.get(right.elementId) ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftSceneOrder !== rightSceneOrder) {
+      return leftSceneOrder - rightSceneOrder;
+    }
+
+    return left.elementId.localeCompare(right.elementId);
+  });
+};
+
+export const getPresentationReveals = (
+  frame: Pick<ExcalidrawFrameElement, "customData">,
+  elements: readonly ExcalidrawElement[] = [],
+) =>
+  getSortedPresentationReveals(
+    getFramePresentationData(frame)?.reveals ?? [],
+    elements,
+  );
+
+export const normalizePresentationRevealOrder = (
+  reveals: readonly StoryplanePresentationReveal[],
+  elements: readonly ExcalidrawElement[] = [],
+) =>
+  getSortedPresentationReveals(reveals, elements).map((reveal, index) => ({
+    ...reveal,
+    order: index,
+  }));
+
+const writePresentationRevealOrder = (
+  reveals: readonly StoryplanePresentationReveal[],
+) =>
+  reveals.map((reveal, index) => ({
+    ...reveal,
+    order: index,
+  }));
+
+export const getPresentationRevealPrimaryElement = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: PresentationElementsMap,
+) => {
+  const primaryElement =
+    isTextElement(element) && element.containerId
+      ? getContainerElement(element, elementsMap) ?? element
+      : element;
+
+  if (
+    !primaryElement ||
+    primaryElement.isDeleted ||
+    isFrameLikeElement(primaryElement)
+  ) {
+    return null;
+  }
+
+  return primaryElement as NonDeletedExcalidrawElement;
+};
+
+export const getOwningPresentationFrame = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: PresentationElementsMap,
+) => {
+  const primaryElement = getPresentationRevealPrimaryElement(
+    element,
+    elementsMap,
+  );
+
+  if (!primaryElement) {
+    return null;
+  }
+
+  let currentFrameId = primaryElement.frameId;
+  const visitedFrameIds = new Set<ExcalidrawElement["id"]>();
+
+  while (currentFrameId && !visitedFrameIds.has(currentFrameId)) {
+    visitedFrameIds.add(currentFrameId);
+
+    const frame = elementsMap.get(currentFrameId);
+    if (!frame || frame.isDeleted) {
+      return null;
+    }
+
+    if (isFrameElement(frame)) {
+      return frame as NonDeleted<ExcalidrawFrameElement>;
+    }
+
+    currentFrameId = frame.frameId;
+  }
+
+  return null;
+};
+
+export const getPresentationRevealSelection = (
+  selectedElements: readonly NonDeletedExcalidrawElement[],
+  elementsMap: PresentationElementsMap,
+): PresentationRevealSelection | null => {
+  if (!selectedElements.length) {
+    return null;
+  }
+
+  let frame: NonDeleted<ExcalidrawFrameElement> | null = null;
+  const selectedRevealElements: NonDeletedExcalidrawElement[] = [];
+  const seenElementIds = new Set<ExcalidrawElement["id"]>();
+
+  for (const selectedElement of selectedElements) {
+    const primaryElement = getPresentationRevealPrimaryElement(
+      selectedElement,
+      elementsMap,
+    );
+
+    if (!primaryElement) {
+      return null;
+    }
+
+    const owningFrame = getOwningPresentationFrame(primaryElement, elementsMap);
+
+    if (!owningFrame) {
+      return null;
+    }
+
+    if (frame && owningFrame.id !== frame.id) {
+      return null;
+    }
+
+    frame = owningFrame;
+
+    if (!seenElementIds.has(primaryElement.id)) {
+      seenElementIds.add(primaryElement.id);
+      selectedRevealElements.push(primaryElement);
+    }
+  }
+
+  return frame && selectedRevealElements.length
+    ? {
+        frame,
+        elements: selectedRevealElements,
+        elementIds: selectedRevealElements.map((element) => element.id),
+      }
+    : null;
+};
+
+export const getPresentationFrameRevealItems = (
+  frame: NonDeleted<ExcalidrawFrameElement>,
+  elements: readonly NonDeletedExcalidrawElement[],
+  elementsMap: PresentationElementsMap = arrayToMap(elements),
+): PresentationRevealItem[] => {
+  const seenElementIds = new Set<ExcalidrawElement["id"]>();
+
+  return getPresentationReveals(frame, elements).map((reveal) => {
+    const rawElement = elementsMap.get(reveal.elementId);
+    const element =
+      rawElement && !rawElement.isDeleted
+        ? getPresentationRevealPrimaryElement(
+            rawElement as NonDeletedExcalidrawElement,
+            elementsMap,
+          )
+        : null;
+
+    if (!element) {
+      return {
+        reveal,
+        element: null,
+        isValid: false,
+        reason: "missing",
+      };
+    }
+
+    const isDuplicate = seenElementIds.has(element.id);
+    seenElementIds.add(element.id);
+
+    if (isDuplicate) {
+      return {
+        reveal,
+        element,
+        isValid: false,
+        reason: "duplicate",
+      };
+    }
+
+    const owningFrame = getOwningPresentationFrame(element, elementsMap);
+
+    if (owningFrame?.id !== frame.id) {
+      return {
+        reveal,
+        element,
+        isValid: false,
+        reason: "moved",
+      };
+    }
+
+    return {
+      reveal,
+      element,
+      isValid: true,
+    };
+  });
+};
+
+export const getPresentationFrameReveals = (
+  frame: NonDeleted<ExcalidrawFrameElement>,
+  elements: readonly NonDeletedExcalidrawElement[],
+  elementsMap: PresentationElementsMap = arrayToMap(elements),
+) =>
+  getPresentationFrameRevealItems(frame, elements, elementsMap).filter(
+    (
+      item,
+    ): item is PresentationRevealItem & {
+      element: NonDeletedExcalidrawElement;
+    } => item.isValid && !!item.element,
+  );
+
+export const appendPresentationReveals = (
+  frame: Pick<ExcalidrawFrameElement, "customData">,
+  elementIds: readonly ExcalidrawElement["id"][],
+  effect: StoryplanePresentationRevealEffect = "appear",
+) => {
+  const normalizedEffect = normalizeRevealEffect(effect);
+  const currentReveals = getPresentationReveals(frame);
+  const existingElementIds = new Set(
+    currentReveals.map((reveal) => reveal.elementId),
+  );
+  let nextOrder =
+    currentReveals.reduce(
+      (maxOrder, reveal) =>
+        Number.isFinite(reveal.order)
+          ? Math.max(maxOrder, reveal.order)
+          : maxOrder,
+      -1,
+    ) + 1;
+
+  const nextReveals = [...currentReveals];
+
+  for (const elementId of elementIds) {
+    if (existingElementIds.has(elementId)) {
+      continue;
+    }
+
+    existingElementIds.add(elementId);
+    nextReveals.push({
+      elementId,
+      order: nextOrder,
+      effect: normalizedEffect,
+      durationMs: PRESENTATION_REVEAL_DURATION,
+    });
+    nextOrder++;
+  }
+
+  return writePresentationRevealOrder(nextReveals);
+};
+
+export const setPresentationRevealEffects = (
+  frame: Pick<ExcalidrawFrameElement, "customData">,
+  elementIds: readonly ExcalidrawElement["id"][],
+  effect: StoryplanePresentationRevealEffect,
+) => {
+  const normalizedEffect = normalizeRevealEffect(effect);
+  const elementIdsToSet = new Set(elementIds);
+  const updatedElementIds = new Set<ExcalidrawElement["id"]>();
+  const currentReveals = getPresentationReveals(frame);
+  const nextReveals = currentReveals.flatMap((reveal) => {
+    if (!elementIdsToSet.has(reveal.elementId)) {
+      return [reveal];
+    }
+
+    if (updatedElementIds.has(reveal.elementId)) {
+      return [];
+    }
+
+    updatedElementIds.add(reveal.elementId);
+    return [{ ...reveal, effect: normalizedEffect }];
+  });
+  let nextOrder =
+    nextReveals.reduce(
+      (maxOrder, reveal) =>
+        Number.isFinite(reveal.order)
+          ? Math.max(maxOrder, reveal.order)
+          : maxOrder,
+      -1,
+    ) + 1;
+
+  elementIds.forEach((elementId) => {
+    if (updatedElementIds.has(elementId)) {
+      return;
+    }
+
+    updatedElementIds.add(elementId);
+    nextReveals.push({
+      elementId,
+      order: nextOrder,
+      effect: normalizedEffect,
+      durationMs: PRESENTATION_REVEAL_DURATION,
+    });
+    nextOrder++;
+  });
+
+  return writePresentationRevealOrder(nextReveals);
+};
+
+export const removePresentationReveals = (
+  frame: Pick<ExcalidrawFrameElement, "customData">,
+  elementIds: readonly ExcalidrawElement["id"][],
+) => {
+  const idsToRemove = new Set(elementIds);
+
+  return normalizePresentationRevealOrder(
+    getPresentationReveals(frame).filter(
+      (reveal) => !idsToRemove.has(reveal.elementId),
+    ),
+  );
+};
+
+export const reorderPresentationReveals = (
+  reveals: readonly StoryplanePresentationReveal[],
+  elementId: ExcalidrawElement["id"],
+  targetElementId: ExcalidrawElement["id"],
+  position: PresentationFrameDropPosition = "before",
+) => {
+  if (elementId === targetElementId) {
+    return normalizePresentationRevealOrder(reveals);
+  }
+
+  const orderedReveals = normalizePresentationRevealOrder(reveals);
+  const sourceIndex = orderedReveals.findIndex(
+    (reveal) => reveal.elementId === elementId,
+  );
+  const targetIndex = orderedReveals.findIndex(
+    (reveal) => reveal.elementId === targetElementId,
+  );
+
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return orderedReveals;
+  }
+
+  const nextReveals = [...orderedReveals];
+  const [movedReveal] = nextReveals.splice(sourceIndex, 1);
+  const targetIndexInNext = nextReveals.findIndex(
+    (reveal) => reveal.elementId === targetElementId,
+  );
+
+  if (targetIndexInNext < 0) {
+    return orderedReveals;
+  }
+
+  nextReveals.splice(
+    position === "after" ? targetIndexInNext + 1 : targetIndexInNext,
+    0,
+    movedReveal,
+  );
+
+  return writePresentationRevealOrder(nextReveals);
+};
+
+export const movePresentationReveal = (
+  reveals: readonly StoryplanePresentationReveal[],
+  elementId: ExcalidrawElement["id"],
+  direction: -1 | 1,
+) => {
+  const orderedReveals = normalizePresentationRevealOrder(reveals);
+  const currentIndex = orderedReveals.findIndex(
+    (reveal) => reveal.elementId === elementId,
+  );
+  const targetIndex = currentIndex + direction;
+
+  if (
+    currentIndex < 0 ||
+    targetIndex < 0 ||
+    targetIndex >= orderedReveals.length ||
+    currentIndex === targetIndex
+  ) {
+    return orderedReveals;
+  }
+
+  return reorderPresentationReveals(
+    orderedReveals,
+    elementId,
+    orderedReveals[targetIndex].elementId,
+    direction < 0 ? "before" : "after",
+  );
+};
+
+export const getPresentationRevealRenderElementIds = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: PresentationElementsMap,
+) => {
+  const ids = new Set<ExcalidrawElement["id"]>([element.id]);
+  const boundTextElement = getBoundTextElement(element, elementsMap);
+
+  if (boundTextElement && !boundTextElement.isDeleted) {
+    ids.add(boundTextElement.id);
+  }
+
+  return ids;
+};
+
+export const getPresentationRevealRemovalUpdatesForElements = (
+  frames: readonly NonDeleted<ExcalidrawFrameElement>[],
+  selectedElements: readonly NonDeletedExcalidrawElement[],
+  elementsMap: PresentationElementsMap,
+): PresentationRevealRemovalUpdate[] => {
+  const elementIds = new Set<ExcalidrawElement["id"]>();
+
+  for (const selectedElement of selectedElements) {
+    const primaryElement = getPresentationRevealPrimaryElement(
+      selectedElement,
+      elementsMap,
+    );
+
+    if (!primaryElement) {
+      continue;
+    }
+
+    getPresentationRevealRenderElementIds(primaryElement, elementsMap).forEach(
+      (elementId) => elementIds.add(elementId),
+    );
+  }
+
+  if (!elementIds.size) {
+    return [];
+  }
+
+  return frames.flatMap((frame) => {
+    const reveals = getPresentationReveals(frame);
+    const nextReveals = reveals.filter(
+      (reveal) => !elementIds.has(reveal.elementId),
+    );
+
+    return nextReveals.length === reveals.length
+      ? []
+      : [
+          {
+            frame,
+            reveals: normalizePresentationRevealOrder(nextReveals),
+          },
+        ];
+  });
+};
+
+export const getPresentationRevealRenderState = (
+  elements: readonly NonDeletedExcalidrawElement[],
+  presentationMode: PresentationRevealPlaybackState,
+) => {
+  const hiddenElementIds = new Set<ExcalidrawElement["id"]>();
+  const opacityByElementId = new Map<ExcalidrawElement["id"], number>();
+
+  if (!presentationMode.active || !presentationMode.currentFrameId) {
+    return { hiddenElementIds, opacityByElementId };
+  }
+
+  const elementsMap = arrayToMap(elements);
+  const currentFrame = elementsMap.get(presentationMode.currentFrameId);
+
+  if (!currentFrame || !isFrameElement(currentFrame)) {
+    return { hiddenElementIds, opacityByElementId };
+  }
+
+  const revealItems = getPresentationFrameReveals(
+    currentFrame as NonDeleted<ExcalidrawFrameElement>,
+    elements,
+    elementsMap,
+  );
+  const visibleRevealCount = Math.max(
+    0,
+    Math.min(presentationMode.visibleRevealCount, revealItems.length),
+  );
+
+  const revealAnimation = presentationMode.revealAnimation;
+  const animatedItem = revealAnimation
+    ? revealItems.find(
+        (item, index) =>
+          index < visibleRevealCount &&
+          (item.element.id === revealAnimation.elementId ||
+            item.reveal.elementId === revealAnimation.elementId),
+      )
+    : null;
+
+  revealItems.forEach((item, index) => {
+    const hasReachedStep = index < visibleRevealCount;
+    const isAnimating =
+      animatedItem &&
+      (animatedItem.element.id === item.element.id ||
+        animatedItem.reveal.elementId === item.reveal.elementId);
+    const isExitEffect =
+      item.reveal.effect === "disappear" || item.reveal.effect === "fadeOut";
+    const shouldHide = isExitEffect
+      ? hasReachedStep && !isAnimating
+      : !hasReachedStep;
+
+    if (!shouldHide) {
+      return;
+    }
+
+    getPresentationRevealRenderElementIds(item.element, elementsMap).forEach(
+      (id) => hiddenElementIds.add(id),
+    );
+  });
+
+  if (revealAnimation && animatedItem) {
+    const progress = Number.isFinite(revealAnimation.progress)
+      ? Math.max(0, Math.min(1, revealAnimation.progress))
+      : 1;
+    const opacityFactor =
+      animatedItem.reveal.effect === "disappear" ||
+      animatedItem.reveal.effect === "fadeOut"
+        ? 1 - easeOut(progress)
+        : easeOut(progress);
+
+    if (opacityFactor < 1) {
+      getPresentationRevealRenderElementIds(
+        animatedItem.element,
+        elementsMap,
+      ).forEach((id) => opacityByElementId.set(id, opacityFactor));
+    }
+  }
+
+  return { hiddenElementIds, opacityByElementId };
 };
 
 export const reorderPresentationFrames = (
@@ -631,11 +964,68 @@ export const getAdjacentPresentationFrame = (
 };
 
 export const getPresentationFrameDuration = (
-  frame: Pick<ExcalidrawFrameElement, "customData">,
-) =>
-  getFramePresentationData(frame)?.transition?.durationMs ??
-  DEFAULT_PRESENTATION_TRANSITION_DURATION;
+  frame: Pick<ExcalidrawFrameElement, "customData"> & PresentationFrameGeometry,
+  previousFrame?: PresentationFrameGeometry | null,
+) => {
+  const customDuration =
+    getFramePresentationData(frame)?.transition?.durationMs;
+
+  if (customDuration !== undefined) {
+    return customDuration;
+  }
+
+  if (!previousFrame || previousFrame.id === frame.id) {
+    return DEFAULT_PRESENTATION_TRANSITION_DURATION;
+  }
+
+  return getAdaptivePresentationFrameDuration(previousFrame, frame);
+};
+
+export const getAdaptivePresentationFrameDuration = (
+  previousFrame: PresentationFrameGeometry,
+  nextFrame: PresentationFrameGeometry,
+) => {
+  const previousCenterX = previousFrame.x + previousFrame.width / 2;
+  const previousCenterY = previousFrame.y + previousFrame.height / 2;
+  const nextCenterX = nextFrame.x + nextFrame.width / 2;
+  const nextCenterY = nextFrame.y + nextFrame.height / 2;
+  const centerDistance = Math.hypot(
+    nextCenterX - previousCenterX,
+    nextCenterY - previousCenterY,
+  );
+  const previousDiagonal = Math.hypot(
+    previousFrame.width,
+    previousFrame.height,
+  );
+  const nextDiagonal = Math.hypot(nextFrame.width, nextFrame.height);
+  const averageDiagonal = Math.max((previousDiagonal + nextDiagonal) / 2, 1);
+  const distanceFactor = Math.min(centerDistance / averageDiagonal, 2.25);
+  const scaleFactor = Math.min(
+    Math.abs(
+      Math.log(Math.max(nextDiagonal, 1) / Math.max(previousDiagonal, 1)),
+    ),
+    1.5,
+  );
+  const duration =
+    MIN_PRESENTATION_TRANSITION_DURATION +
+    distanceFactor * 300 +
+    scaleFactor * 220;
+
+  return (
+    Math.round(Math.min(MAX_PRESENTATION_TRANSITION_DURATION, duration) / 50) *
+    50
+  );
+};
 
 export const getPresentationFrameTitle = (
   frame: Pick<ExcalidrawFrameElement, "customData" | "name">,
 ) => getFramePresentationData(frame)?.title ?? frame.name ?? null;
+
+export const getDefaultPresentationFrameLabel = (index: number) =>
+  `${index + 1}`;
+
+export const getPresentationFrameLabel = (
+  frame: Pick<ExcalidrawFrameElement, "customData" | "name">,
+  index: number,
+) =>
+  getPresentationFrameTitle(frame) ?? getDefaultPresentationFrameLabel(index);

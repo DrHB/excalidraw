@@ -114,9 +114,9 @@ export const getDefaultAppState = (): Omit<
     presentationMode: {
       active: false,
       currentFrameId: null,
-      currentRevealStep: -1,
-      revealAnimation: null,
       sourceViewModeEnabled: false,
+      visibleRevealCount: 0,
+      revealAnimation: null,
     },
     showHyperlinkPopup: false,
     selectedLinearElement: null,

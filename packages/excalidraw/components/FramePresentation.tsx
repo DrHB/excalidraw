@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import React, {
   useCallback,
   useEffect,
@@ -17,28 +18,31 @@ import { isFrameElement } from "@excalidraw/element";
 import type {
   ExcalidrawFrameElement,
   NonDeleted,
+  NonDeletedSceneElementsMap,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
 import { t } from "../i18n";
 import {
   buildFramePresentationCustomData,
-  DEFAULT_PRESENTATION_REVEAL_DURATION,
-  DEFAULT_PRESENTATION_TRANSITION_DURATION,
   getAdjacentPresentationFrame,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
+  getPresentationFrameReveals,
   getPresentationFrameTitle,
-  getPresentationRevealEffectForElements,
-  getPresentationRevealSteps,
+  getPresentationRevealRenderElementIds,
+  getPresentationRevealSelection,
+  getPresentationReveals,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
+  PRESENTATION_REVEAL_DURATION,
   PRESENTATION_VIEWPORT_ZOOM_FACTOR,
-  type PresentationRevealEffect,
-  updatePresentationFrameReveals,
+  removePresentationReveals,
+  setPresentationRevealEffects,
 } from "../presentation/framePresentation";
 
 import { Island } from "./Island";
+import DropdownMenu from "./dropdownMenu/DropdownMenu";
 import {
   chevronLeftIcon,
   chevronRight,
@@ -53,35 +57,12 @@ import { ToolButton } from "./ToolButton";
 import "./FramePresentation.scss";
 
 import type { AppClassProperties, AppState, UIAppState } from "../types";
+import type { StoryplanePresentationRevealEffect } from "../presentation/framePresentation";
 
 type PresentationFrame = NonDeleted<ExcalidrawFrameElement>;
 
-const PRESENTATION_EFFECT_OPTIONS: readonly {
-  effect: PresentationRevealEffect;
-  testId: string;
-}[] = [
-  { effect: "none", testId: "presentation-effect-none" },
-  { effect: "appear", testId: "presentation-effect-appear" },
-  { effect: "disappear", testId: "presentation-effect-disappear" },
-  { effect: "fadeIn", testId: "presentation-effect-fade-in" },
-  { effect: "fadeOut", testId: "presentation-effect-fade-out" },
-];
-
-const getPresentationEffectLabel = (effect: PresentationRevealEffect) => {
-  switch (effect) {
-    case "appear":
-      return t("presentation.effectAppear");
-    case "disappear":
-      return t("presentation.effectDisappear");
-    case "fadeIn":
-      return t("presentation.effectFadeIn");
-    case "fadeOut":
-      return t("presentation.effectFadeOut");
-    case "none":
-    default:
-      return t("presentation.effectNone");
-  }
-};
+const isAnimatedRevealEffect = (effect: StoryplanePresentationRevealEffect) =>
+  effect === "fade" || effect === "fadeIn" || effect === "fadeOut";
 
 type FramePresentationProps = {
   app: AppClassProperties;
@@ -110,6 +91,7 @@ export const FramePresentation = ({
   );
 
   const currentFrameId = appState.presentationMode.currentFrameId;
+  const selectedElementIds = appState.selectedElementIds;
   const currentVisibleFrame = useMemo(
     () => visibleFrames.find((frame) => frame.id === currentFrameId) ?? null,
     [visibleFrames, currentFrameId],
@@ -117,6 +99,20 @@ export const FramePresentation = ({
   const currentVisibleFrameIndex = currentVisibleFrame
     ? visibleFrames.findIndex((frame) => frame.id === currentVisibleFrame.id)
     : -1;
+  const currentFrameReveals = useMemo(
+    () =>
+      currentVisibleFrame
+        ? getPresentationFrameReveals(currentVisibleFrame, elements)
+        : [],
+    [currentVisibleFrame, elements],
+  );
+  const visibleRevealCount = Math.max(
+    0,
+    Math.min(
+      appState.presentationMode.visibleRevealCount,
+      currentFrameReveals.length,
+    ),
+  );
 
   const previousFrame = useMemo(
     () => getAdjacentPresentationFrame(orderedFrames, currentFrameId, -1),
@@ -126,81 +122,80 @@ export const FramePresentation = ({
     () => getAdjacentPresentationFrame(orderedFrames, currentFrameId, 1),
     [orderedFrames, currentFrameId],
   );
-  const currentRevealSteps = useMemo(
-    () =>
-      currentVisibleFrame
-        ? getPresentationRevealSteps(currentVisibleFrame)
-        : [],
-    [currentVisibleFrame],
-  );
-  const currentRevealStep = appState.presentationMode.currentRevealStep;
-  const hasNextRevealStep = currentRevealStep < currentRevealSteps.length - 1;
-  const hasPreviousRevealStep = currentRevealStep >= 0;
 
   const previousFrameCountRef = useRef(orderedFrames.length);
   const hasAutoOpenedSidebarRef = useRef(false);
+  const revealAnimationFrameRef = useRef<number | null>(null);
+  const [isEffectMenuOpen, setIsEffectMenuOpen] = useState(false);
+  const [, setRevealMetadataVersion] = useState(0);
   const firstOrderedFrame = orderedFrames[0] ?? null;
 
   const isPresentationSidebarOpen =
     appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
     appState.openSidebar.tab === PRESENTATION_SIDEBAR_TAB;
 
-  const [isEffectMenuOpen, setIsEffectMenuOpen] = useState(false);
-  const effectControlRef = useRef<HTMLDivElement>(null);
-  const effectTarget = useMemo(() => {
+  const revealSelection = useMemo(() => {
+    const elementsMap = app.scene.getNonDeletedElementsMap();
     const selectedElements = elements.filter(
-      (element) => appState.selectedElementIds[element.id],
+      (element) => selectedElementIds[element.id],
     );
 
-    if (
-      !selectedElements.length ||
-      selectedElements.some((element) => isFrameElement(element))
-    ) {
-      return null;
+    return getPresentationRevealSelection(selectedElements, elementsMap);
+  }, [app.scene, elements, selectedElementIds]);
+
+  const selectedRevealState = (() => {
+    if (!revealSelection) {
+      return {
+        effect: null,
+        hasReveal: false,
+      };
     }
 
-    const frameId = selectedElements[0].frameId;
+    const currentFrame = app.scene
+      .getNonDeletedElementsMap()
+      .get(revealSelection.frame.id);
 
-    if (
-      !frameId ||
-      selectedElements.some((element) => element.frameId !== frameId)
-    ) {
-      return null;
+    if (!currentFrame || !isFrameElement(currentFrame)) {
+      return {
+        effect: null,
+        hasReveal: false,
+      };
     }
 
-    const frame = orderedFrames.find((frame) => frame.id === frameId) ?? null;
+    const selectedElementIds = new Set(revealSelection.elementIds);
+    const selectedReveals = getPresentationReveals(currentFrame).filter(
+      (reveal) => selectedElementIds.has(reveal.elementId),
+    );
+    const selectedEffects = new Set(
+      selectedReveals.map((reveal) => reveal.effect),
+    );
 
-    return frame ? { frame, elements: selectedElements } : null;
-  }, [appState.selectedElementIds, elements, orderedFrames]);
-  const effectTargetElementIds = useMemo(
-    () => effectTarget?.elements.map((element) => element.id) ?? [],
-    [effectTarget],
-  );
-  const selectedRevealEffect = effectTarget
-    ? getPresentationRevealEffectForElements(
-        effectTarget.frame,
-        effectTargetElementIds,
-      )
-    : "none";
-
-  useEffect(() => {
-    if (!effectTarget) {
-      setIsEffectMenuOpen(false);
-    }
-  }, [effectTarget]);
+    return {
+      effect:
+        selectedReveals.length === revealSelection.elementIds.length &&
+        selectedEffects.size === 1
+          ? selectedReveals[0]?.effect ?? null
+          : null,
+      hasReveal: selectedReveals.length > 0,
+    };
+  })();
 
   const scrollToFrame = useCallback(
     (frame: PresentationFrame, animate = true) => {
+      const previousFrame = appState.presentationMode.active
+        ? visibleFrames.find(
+            (visibleFrame) => visibleFrame.id === currentFrameId,
+          ) ?? null
+        : null;
+
       app.scrollToContent(frame, {
         fitToViewport: true,
         viewportZoomFactor: PRESENTATION_VIEWPORT_ZOOM_FACTOR,
         animate,
-        duration:
-          getPresentationFrameDuration(frame) ??
-          DEFAULT_PRESENTATION_TRANSITION_DURATION,
+        duration: getPresentationFrameDuration(frame, previousFrame),
       });
     },
-    [app],
+    [app, appState.presentationMode.active, currentFrameId, visibleFrames],
   );
 
   const focusEditor = useCallback(() => {
@@ -210,19 +205,82 @@ export const FramePresentation = ({
   }, [app]);
 
   useEffect(() => {
-    if (!isEffectMenuOpen) {
+    if (!revealSelection) {
+      setIsEffectMenuOpen(false);
+    }
+  }, [revealSelection]);
+
+  const handleEffectMenuToggle = useCallback(() => {
+    if (!revealSelection) {
       return;
     }
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (!effectControlRef.current?.contains(event.target as Node)) {
-        setIsEffectMenuOpen(false);
-      }
-    };
+    setIsEffectMenuOpen((isOpen) => !isOpen);
+    setAppState({ openMenu: null, openPopup: null });
+  }, [revealSelection, setAppState]);
 
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [isEffectMenuOpen]);
+  const updateRevealMetadata = useCallback(
+    (
+      updater: (
+        frame: PresentationFrame,
+        elementsMap: NonDeletedSceneElementsMap,
+      ) => Parameters<typeof buildFramePresentationCustomData>[1]["reveals"],
+    ) => {
+      if (!revealSelection) {
+        return;
+      }
+
+      const elementsMap = app.scene.getNonDeletedElementsMap();
+      const currentFrame = elementsMap.get(revealSelection.frame.id);
+
+      if (!currentFrame || !isFrameElement(currentFrame)) {
+        return;
+      }
+
+      app.scene.mutateElement(currentFrame, {
+        customData: buildFramePresentationCustomData(currentFrame, {
+          reveals: updater(currentFrame, elementsMap),
+        }),
+      });
+      setRevealMetadataVersion((version) => version + 1);
+    },
+    [app.scene, revealSelection],
+  );
+
+  const handleSetRevealEffect = useCallback(
+    (effect: StoryplanePresentationRevealEffect) => {
+      if (!revealSelection) {
+        return;
+      }
+
+      const { elementIds } = revealSelection;
+
+      updateRevealMetadata((frame) =>
+        setPresentationRevealEffects(frame, elementIds, effect),
+      );
+      setIsEffectMenuOpen(false);
+      focusEditor();
+    },
+    [focusEditor, revealSelection, updateRevealMetadata],
+  );
+
+  const handleRemoveRevealEffect = useCallback(() => {
+    if (!revealSelection) {
+      return;
+    }
+
+    const { elements } = revealSelection;
+
+    updateRevealMetadata((frame, elementsMap) => {
+      const elementIds = elements.flatMap((element) => [
+        ...getPresentationRevealRenderElementIds(element, elementsMap),
+      ]);
+
+      return removePresentationReveals(frame, elementIds);
+    });
+    setIsEffectMenuOpen(false);
+    focusEditor();
+  }, [focusEditor, revealSelection, updateRevealMetadata]);
 
   const setPresentationState = useCallback(
     (
@@ -249,6 +307,62 @@ export const FramePresentation = ({
     [setAppState],
   );
 
+  const cancelRevealAnimation = useCallback(() => {
+    if (revealAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(revealAnimationFrameRef.current);
+      revealAnimationFrameRef.current = null;
+    }
+  }, []);
+
+  const animateReveal = useCallback(
+    (
+      elementId: NonDeletedExcalidrawElement["id"],
+      durationMs = PRESENTATION_REVEAL_DURATION,
+    ) => {
+      cancelRevealAnimation();
+
+      const startTime = performance.now();
+      const safeDuration = Math.max(1, durationMs);
+
+      const step = (timestamp: number) => {
+        const progress = Math.min(1, (timestamp - startTime) / safeDuration);
+
+        setPresentationState({
+          revealAnimation: {
+            elementId,
+            progress,
+            durationMs: safeDuration,
+          },
+        });
+
+        if (progress < 1) {
+          revealAnimationFrameRef.current = requestAnimationFrame(step);
+          return;
+        }
+
+        revealAnimationFrameRef.current = null;
+        setPresentationState({ revealAnimation: null });
+      };
+
+      setPresentationState({
+        revealAnimation: {
+          elementId,
+          progress: 0,
+          durationMs: safeDuration,
+        },
+      });
+      revealAnimationFrameRef.current = requestAnimationFrame(step);
+    },
+    [cancelRevealAnimation, setPresentationState],
+  );
+
+  useEffect(
+    () => () => {
+      cancelRevealAnimation();
+    },
+    [cancelRevealAnimation],
+  );
+
   const togglePresentationSidebar = useCallback(() => {
     setAppState((state) => ({
       openSidebar:
@@ -261,32 +375,6 @@ export const FramePresentation = ({
             },
     }));
   }, [setAppState]);
-
-  const handleApplyEffect = useCallback(
-    (effect: PresentationRevealEffect) => {
-      if (!effectTarget) {
-        setIsEffectMenuOpen(false);
-        return;
-      }
-
-      app.scene.mutateElement(
-        effectTarget.frame,
-        {
-          customData: buildFramePresentationCustomData(effectTarget.frame, {
-            reveals: updatePresentationFrameReveals(
-              effectTarget.frame,
-              effectTargetElementIds,
-              effect,
-            ),
-          }),
-        },
-        { informMutation: true, isDragging: false },
-      );
-      setIsEffectMenuOpen(false);
-      focusEditor();
-    },
-    [app.scene, effectTarget, effectTargetElementIds, focusEditor],
-  );
 
   const handleStartPresentation = useCallback(
     (initialFrame?: PresentationFrame | null) => {
@@ -312,9 +400,9 @@ export const FramePresentation = ({
           ...state.presentationMode,
           active: true,
           currentFrameId: nextFrame.id,
-          currentRevealStep: -1,
-          revealAnimation: null,
           sourceViewModeEnabled: state.viewModeEnabled,
+          visibleRevealCount: 0,
+          revealAnimation: null,
         },
       }));
       scrollToFrame(nextFrame);
@@ -337,163 +425,92 @@ export const FramePresentation = ({
         ...state.presentationMode,
         active: false,
         currentFrameId: null,
-        currentRevealStep: -1,
-        revealAnimation: null,
         sourceViewModeEnabled: false,
+        visibleRevealCount: 0,
+        revealAnimation: null,
       },
     }));
+    cancelRevealAnimation();
     focusEditor();
-  }, [focusEditor, setAppState]);
+  }, [cancelRevealAnimation, focusEditor, setAppState]);
 
   const handleNavigateToFrame = useCallback(
-    (frame: PresentationFrame | null, revealStep = -1) => {
+    (frame: PresentationFrame | null, revealCount = 0) => {
       if (!frame) {
         return;
       }
 
+      cancelRevealAnimation();
       setPresentationState({
         currentFrameId: frame.id,
-        currentRevealStep: revealStep,
+        visibleRevealCount: revealCount,
         revealAnimation: null,
       });
       scrollToFrame(frame);
       focusEditor();
     },
-    [focusEditor, scrollToFrame, setPresentationState],
+    [cancelRevealAnimation, focusEditor, scrollToFrame, setPresentationState],
   );
 
-  const startRevealStep = useCallback(
-    (order: number, direction: -1 | 1) => {
-      const revealStep = currentRevealSteps[order];
-
-      if (!currentVisibleFrame || !revealStep) {
-        return;
-      }
-
-      const nextRevealStep = direction > 0 ? order : order - 1;
-      const hasFadeReveal = revealStep.reveals.some(
-        (reveal) => reveal.effect === "fadeIn" || reveal.effect === "fadeOut",
-      );
+  const handleNext = useCallback(() => {
+    if (visibleRevealCount < currentFrameReveals.length) {
+      const nextReveal = currentFrameReveals[visibleRevealCount];
 
       setPresentationState({
-        currentRevealStep: nextRevealStep,
-        revealAnimation: hasFadeReveal
-          ? {
-              frameId: currentVisibleFrame.id,
-              order,
-              direction,
-              durationMs: Math.max(
-                1,
-                ...revealStep.reveals.map(
-                  (reveal) =>
-                    reveal.durationMs ?? DEFAULT_PRESENTATION_REVEAL_DURATION,
-                ),
-              ),
-              progress: 0,
-            }
-          : null,
+        visibleRevealCount: visibleRevealCount + 1,
+        revealAnimation: null,
+      });
+
+      if (isAnimatedRevealEffect(nextReveal.reveal.effect)) {
+        animateReveal(
+          nextReveal.element.id,
+          nextReveal.reveal.durationMs ?? PRESENTATION_REVEAL_DURATION,
+        );
+      }
+
+      focusEditor();
+      return;
+    }
+
+    if (nextFrame) {
+      handleNavigateToFrame(nextFrame);
+    }
+  }, [
+    animateReveal,
+    currentFrameReveals,
+    focusEditor,
+    handleNavigateToFrame,
+    nextFrame,
+    setPresentationState,
+    visibleRevealCount,
+  ]);
+
+  const handlePrevious = useCallback(() => {
+    if (visibleRevealCount > 0) {
+      cancelRevealAnimation();
+      setPresentationState({
+        visibleRevealCount: visibleRevealCount - 1,
+        revealAnimation: null,
       });
       focusEditor();
-    },
-    [
-      currentRevealSteps,
-      currentVisibleFrame,
-      focusEditor,
-      setPresentationState,
-    ],
-  );
-
-  const handleNextPresentationStep = useCallback(() => {
-    if (appState.presentationMode.revealAnimation) {
       return;
     }
 
-    if (hasNextRevealStep) {
-      startRevealStep(currentRevealStep + 1, 1);
-      return;
-    }
-
-    handleNavigateToFrame(nextFrame, -1);
-  }, [
-    appState.presentationMode.revealAnimation,
-    currentRevealStep,
-    handleNavigateToFrame,
-    hasNextRevealStep,
-    nextFrame,
-    startRevealStep,
-  ]);
-
-  const handlePreviousPresentationStep = useCallback(() => {
-    if (appState.presentationMode.revealAnimation) {
-      return;
-    }
-
-    if (hasPreviousRevealStep) {
-      startRevealStep(currentRevealStep, -1);
-      return;
-    }
-
-    handleNavigateToFrame(
-      previousFrame,
-      previousFrame ? getPresentationRevealSteps(previousFrame).length - 1 : -1,
-    );
-  }, [
-    appState.presentationMode.revealAnimation,
-    currentRevealStep,
-    handleNavigateToFrame,
-    hasPreviousRevealStep,
-    previousFrame,
-    startRevealStep,
-  ]);
-
-  const revealAnimation = appState.presentationMode.revealAnimation;
-
-  useEffect(() => {
-    if (!appState.presentationMode.active || !revealAnimation) {
-      return;
-    }
-
-    let frameId = 0;
-    const startedAt =
-      performance.now() - revealAnimation.progress * revealAnimation.durationMs;
-
-    const tick = () => {
-      const progress = Math.min(
-        (performance.now() - startedAt) / revealAnimation.durationMs,
-        1,
+    if (previousFrame) {
+      handleNavigateToFrame(
+        previousFrame,
+        getPresentationFrameReveals(previousFrame, elements).length,
       );
-
-      setPresentationState((presentationMode) => {
-        const currentAnimation = presentationMode.revealAnimation;
-
-        if (
-          !currentAnimation ||
-          currentAnimation.frameId !== revealAnimation.frameId ||
-          currentAnimation.order !== revealAnimation.order ||
-          currentAnimation.direction !== revealAnimation.direction
-        ) {
-          return {};
-        }
-
-        return {
-          revealAnimation:
-            progress >= 1
-              ? null
-              : {
-                  ...currentAnimation,
-                  progress,
-                },
-        };
-      });
-
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(tick);
-      }
-    };
-
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [appState.presentationMode.active, revealAnimation, setPresentationState]);
+    }
+  }, [
+    cancelRevealAnimation,
+    elements,
+    focusEditor,
+    handleNavigateToFrame,
+    previousFrame,
+    setPresentationState,
+    visibleRevealCount,
+  ]);
 
   useEffect(() => {
     if (mode === "controls" || isMobile) {
@@ -539,9 +556,9 @@ export const FramePresentation = ({
       setPresentationState({
         active: false,
         currentFrameId: null,
-        currentRevealStep: -1,
-        revealAnimation: null,
         sourceViewModeEnabled: false,
+        visibleRevealCount: 0,
+        revealAnimation: null,
       });
       return;
     }
@@ -568,7 +585,7 @@ export const FramePresentation = ({
 
     setPresentationState({
       currentFrameId: fallbackFrame.id,
-      currentRevealStep: -1,
+      visibleRevealCount: 0,
       revealAnimation: null,
     });
     scrollToFrame(fallbackFrame);
@@ -607,9 +624,9 @@ export const FramePresentation = ({
         event.key === KEYS.SPACE ||
         event.key === KEYS.ENTER
       ) {
-        if (hasNextRevealStep || nextFrame) {
+        if (nextFrame || visibleRevealCount < currentFrameReveals.length) {
           event.preventDefault();
-          handleNextPresentationStep();
+          handleNext();
         }
         return;
       }
@@ -620,9 +637,9 @@ export const FramePresentation = ({
         event.key === KEYS.PAGE_UP ||
         event.key === KEYS.BACKSPACE
       ) {
-        if (hasPreviousRevealStep || previousFrame) {
+        if (previousFrame || visibleRevealCount > 0) {
           event.preventDefault();
-          handlePreviousPresentationStep();
+          handlePrevious();
         }
         return;
       }
@@ -652,16 +669,20 @@ export const FramePresentation = ({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     appState.presentationMode.active,
+    currentFrameReveals.length,
     handleExitPresentation,
     handleNavigateToFrame,
-    handleNextPresentationStep,
-    handlePreviousPresentationStep,
-    hasNextRevealStep,
-    hasPreviousRevealStep,
+    handleNext,
+    handlePrevious,
     nextFrame,
     previousFrame,
     visibleFrames,
+    visibleRevealCount,
   ]);
+
+  const canNavigatePrevious = !!previousFrame || visibleRevealCount > 0;
+  const canNavigateNext =
+    !!nextFrame || visibleRevealCount < currentFrameReveals.length;
 
   const shouldShowControls =
     mode !== "layer" &&
@@ -686,48 +707,64 @@ export const FramePresentation = ({
             title={`${t("presentation.drawFrames")} - ${KEYS.F.toUpperCase()}`}
             type="button"
           />
-          <div
-            className="FramePresentation__effectControl"
-            ref={effectControlRef}
-          >
-            <ToolButton
+          <DropdownMenu open={isEffectMenuOpen}>
+            <DropdownMenu.Trigger
               aria-label={t("presentation.effect")}
-              className="FramePresentation__toolButton"
-              data-testid="toolbar-effects"
-              disabled={!effectTarget}
-              icon={MagicIcon}
-              onClick={() => {
-                if (effectTarget) {
-                  setIsEffectMenuOpen((open) => !open);
-                }
-              }}
-              selected={
-                isEffectMenuOpen ||
-                (!!selectedRevealEffect && selectedRevealEffect !== "none")
-              }
+              className={clsx("FramePresentation__toolButton", {
+                "FramePresentation__toolButton--selected": isEffectMenuOpen,
+              })}
+              data-testid="toolbar-presentation-effect"
+              disabled={!revealSelection}
+              onToggle={handleEffectMenuToggle}
               title={t("presentation.effect")}
-              type="button"
-            />
-            {isEffectMenuOpen && effectTarget && (
-              <div
-                className="FramePresentation__effectMenu"
-                data-testid="presentation-effect-menu"
+            >
+              {MagicIcon}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content
+              className="FramePresentation__effectDropdown"
+              onClickOutside={() => setIsEffectMenuOpen(false)}
+              onSelect={() => setIsEffectMenuOpen(false)}
+            >
+              <DropdownMenu.Item
+                data-testid="presentation-effect-none"
+                onSelect={handleRemoveRevealEffect}
+                selected={!selectedRevealState.hasReveal}
               >
-                {PRESENTATION_EFFECT_OPTIONS.map((option) => (
-                  <button
-                    aria-pressed={selectedRevealEffect === option.effect}
-                    className="FramePresentation__effectMenuItem"
-                    data-testid={option.testId}
-                    key={option.effect}
-                    onClick={() => handleApplyEffect(option.effect)}
-                    type="button"
-                  >
-                    {getPresentationEffectLabel(option.effect)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                {t("presentation.effectNone")}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                data-testid="presentation-effect-appear"
+                onSelect={() => handleSetRevealEffect("appear")}
+                selected={selectedRevealState.effect === "appear"}
+              >
+                {t("presentation.effectAppear")}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                data-testid="presentation-effect-disappear"
+                onSelect={() => handleSetRevealEffect("disappear")}
+                selected={selectedRevealState.effect === "disappear"}
+              >
+                {t("presentation.effectDisappear")}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                data-testid="presentation-effect-fade-in"
+                onSelect={() => handleSetRevealEffect("fadeIn")}
+                selected={
+                  selectedRevealState.effect === "fadeIn" ||
+                  selectedRevealState.effect === "fade"
+                }
+              >
+                {t("presentation.effectFadeIn")}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                data-testid="presentation-effect-fade-out"
+                onSelect={() => handleSetRevealEffect("fadeOut")}
+                selected={selectedRevealState.effect === "fadeOut"}
+              >
+                {t("presentation.effectFadeOut")}
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu>
           <ToolButton
             aria-label={t("presentation.present")}
             className="FramePresentation__toolButton"
@@ -773,9 +810,9 @@ export const FramePresentation = ({
                   aria-label={t("presentation.previous")}
                   className="FramePresentation__toolButton"
                   data-testid="presentation-previous"
-                  disabled={!hasPreviousRevealStep && !previousFrame}
+                  disabled={!canNavigatePrevious}
                   icon={chevronLeftIcon}
-                  onClick={handlePreviousPresentationStep}
+                  onClick={handlePrevious}
                   showAriaLabel={true}
                   title={t("presentation.previous")}
                   type="button"
@@ -795,9 +832,9 @@ export const FramePresentation = ({
                   aria-label={t("presentation.next")}
                   className="FramePresentation__toolButton"
                   data-testid="presentation-next"
-                  disabled={!hasNextRevealStep && !nextFrame}
+                  disabled={!canNavigateNext}
                   icon={chevronRight}
-                  onClick={handleNextPresentationStep}
+                  onClick={handleNext}
                   showAriaLabel={true}
                   title={t("presentation.next")}
                   type="button"

@@ -20,8 +20,13 @@ This is an experimental fork. For the stable upstream project, use [excalidraw/e
 
 - Prezi-style frame presentation using Excalidraw frames
 - Presentation sidebar for organizing the frame path
-- Frame thumbnails, titles, and ordering controls
+- Scrollable frame organizer with compact live thumbnails, titles, and ordering controls
+- Numbered frame labels that match the presentation order
 - Hide/show frames from the presentation path
+- Smooth adaptive pan/zoom transitions between frames
+- Toolbar effect dropdown for selected frame-owned objects
+- Manual Appear and Disappear effects during presentation mode
+- Ordered reveal/effect rows under each frame in the presentation sidebar
 - Next/previous navigation during presentation mode
 - Jump-to-frame controls from the sidebar and presentation overlay
 - Core Excalidraw tools: shapes, arrows, text, free draw, images, eraser, zoom, pan, undo/redo, libraries, dark mode, and export

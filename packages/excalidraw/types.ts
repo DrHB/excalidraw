@@ -57,7 +57,6 @@ import type Library from "./data/library";
 import type { ContextMenuItems } from "./components/ContextMenu";
 import type { SnapLine } from "./snapping";
 import type { ImportedDataState } from "./data/types";
-import type { PresentationRevealAnimation } from "./presentation/framePresentation";
 
 import type { Language } from "./i18n";
 import type { isOverScrollBars } from "./scene/scrollbars";
@@ -276,9 +275,13 @@ export type BoxSelectionMode = "contain" | "overlap";
 export type PresentationModeState = {
   active: boolean;
   currentFrameId: ExcalidrawElement["id"] | null;
-  currentRevealStep: number;
-  revealAnimation: PresentationRevealAnimation | null;
   sourceViewModeEnabled: boolean;
+  visibleRevealCount: number;
+  revealAnimation: {
+    elementId: ExcalidrawElement["id"];
+    progress: number;
+    durationMs: number;
+  } | null;
 };
 
 export interface AppState {

@@ -1,19 +1,16 @@
 import clsx from "clsx";
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DEFAULT_SIDEBAR,
   KEYS,
   PRESENTATION_SIDEBAR_TAB,
+  THEME,
 } from "@excalidraw/common";
-import { selectGroupsForSelectedElements } from "@excalidraw/element";
+import {
+  isFrameElement,
+  selectGroupsForSelectedElements,
+} from "@excalidraw/element";
 
 import type {
   ExcalidrawFrameElement,
@@ -21,25 +18,26 @@ import type {
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
-import { useUIAppState } from "../context/ui-appState";
-import { usePresentationFrameSvg } from "../hooks/usePresentationFrameSvg";
 import { t } from "../i18n";
+import { usePresentationFrameSvg } from "../hooks/usePresentationFrameSvg";
 import {
   buildFramePresentationCustomData,
-  DEFAULT_PRESENTATION_TRANSITION_DURATION,
+  getFramePresentationData,
+  getPresentationFrameReveals,
   getPresentationFramePreviewSignatures,
   getOrderedPresentationFrames,
   getPresentationFrameDuration,
   getPresentationFrameTitle,
-  getPresentationRevealSteps,
+  getPresentationReveals,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
+  movePresentationReveal,
   PRESENTATION_VIEWPORT_ZOOM_FACTOR,
   reorderPresentationFrames,
-  reorderPresentationFrameRevealSteps,
-  type PresentationRevealEffect,
-  type PresentationRevealStep,
+  reorderPresentationReveals,
+  removePresentationReveals,
 } from "../presentation/framePresentation";
+import { useUIAppState } from "../context/ui-appState";
 
 import {
   useApp,
@@ -49,7 +47,15 @@ import {
 } from "./App";
 import { Button } from "./Button";
 import { Sidebar } from "./Sidebar/Sidebar";
-import { DotsIcon, eyeClosedIcon, eyeIcon, chevronRight } from "./icons";
+import {
+  collapseDownIcon,
+  collapseUpIcon,
+  DotsIcon,
+  eyeClosedIcon,
+  eyeIcon,
+  chevronRight,
+  TrashIcon,
+} from "./icons";
 
 import "./PresentationSidebar.scss";
 
@@ -57,52 +63,27 @@ import type { AppState } from "../types";
 
 type PresentationFrame = NonDeleted<ExcalidrawFrameElement>;
 type DropPosition = "before" | "after";
-type FrameDropIndicator = {
+type DropIndicator = {
   frameId: PresentationFrame["id"];
   position: DropPosition;
 } | null;
-type DraggedRevealStep = {
+type DraggedReveal = {
   frameId: PresentationFrame["id"];
-  order: number;
+  elementId: NonDeletedExcalidrawElement["id"];
 } | null;
 type RevealDropIndicator = {
   frameId: PresentationFrame["id"];
-  order: number;
+  elementId: NonDeletedExcalidrawElement["id"];
   position: DropPosition;
 } | null;
 
-const FRAME_DRAG_DATA_TYPE = "application/x-excalidraw-presentation-frame";
-const REVEAL_DRAG_DATA_TYPE = "application/x-excalidraw-presentation-reveal";
-const REVEAL_DRAG_PLAIN_PREFIX = "presentation-reveal:";
+const PRESENTATION_REVEAL_DRAG_MIME = "application/x-storyplane-reveal";
 
 const getDropPosition = (
   event: React.DragEvent<HTMLDivElement>,
 ): DropPosition => {
   const bounds = event.currentTarget.getBoundingClientRect();
   return event.clientY - bounds.top > bounds.height / 2 ? "after" : "before";
-};
-
-const getPresentationEffectLabel = (effect: PresentationRevealEffect) => {
-  switch (effect) {
-    case "appear":
-      return t("presentation.effectAppear");
-    case "disappear":
-      return t("presentation.effectDisappear");
-    case "fadeIn":
-      return t("presentation.effectFadeIn");
-    case "fadeOut":
-      return t("presentation.effectFadeOut");
-    case "none":
-    default:
-      return t("presentation.effectNone");
-  }
-};
-
-const getRevealStepEffectLabel = (step: PresentationRevealStep) => {
-  const effects = new Set(step.reveals.map((reveal) => reveal.effect));
-  return effects.size === 1
-    ? getPresentationEffectLabel(effects.values().next().value!)
-    : t("presentation.effect");
 };
 
 const useVisibleInViewport = () => {
@@ -142,11 +123,15 @@ const useVisibleInViewport = () => {
 const PresentationFrameThumbnail = ({
   frame,
   elements,
+  exportWithDarkMode,
   signature,
+  viewBackgroundColor,
 }: {
   frame: PresentationFrame;
   elements: readonly NonDeletedExcalidrawElement[];
+  exportWithDarkMode: boolean;
   signature: string;
+  viewBackgroundColor: AppState["viewBackgroundColor"];
 }) => {
   const app = useApp();
   const { ref, isVisible } = useVisibleInViewport();
@@ -155,10 +140,12 @@ const PresentationFrameThumbnail = ({
   usePresentationFrameSvg({
     enabled: isVisible,
     elements,
+    exportWithDarkMode,
     files: app.files,
     frame,
     ref: svgRef,
     signature,
+    viewBackgroundColor,
   });
 
   return (
@@ -170,7 +157,9 @@ const PresentationFrameThumbnail = ({
 
 const PresentationSidebarRow = ({
   canDrag,
+  draggedReveal,
   elements,
+  exportWithDarkMode,
   frame,
   index,
   isCurrent,
@@ -183,6 +172,8 @@ const PresentationSidebarRow = ({
   onDragStart,
   onDrop,
   onJumpToFrame,
+  onMoveReveal,
+  onRemoveReveal,
   onRevealDragEnd,
   onRevealDragOver,
   onRevealDragStart,
@@ -190,15 +181,17 @@ const PresentationSidebarRow = ({
   onToggleHidden,
   presentationActive,
   revealDropIndicator,
-  revealSteps,
   signature,
+  viewBackgroundColor,
 }: {
   canDrag: boolean;
+  draggedReveal: DraggedReveal;
   elements: readonly NonDeletedExcalidrawElement[];
+  exportWithDarkMode: boolean;
   frame: PresentationFrame;
   index: number;
   isCurrent: boolean;
-  isDropTarget: FrameDropIndicator;
+  isDropTarget: DropIndicator;
   isDragging: boolean;
   isHidden: boolean;
   onCommitTitle: (frame: PresentationFrame, title?: string) => void;
@@ -216,34 +209,86 @@ const PresentationSidebarRow = ({
     frameId: PresentationFrame["id"],
   ) => void;
   onJumpToFrame: (frame: PresentationFrame) => void;
+  onMoveReveal: (
+    frame: PresentationFrame,
+    elementId: NonDeletedExcalidrawElement["id"],
+    direction: -1 | 1,
+  ) => void;
+  onRemoveReveal: (
+    frame: PresentationFrame,
+    elementId: NonDeletedExcalidrawElement["id"],
+  ) => void;
   onRevealDragEnd: () => void;
   onRevealDragOver: (
     event: React.DragEvent<HTMLDivElement>,
     frameId: PresentationFrame["id"],
-    order: number,
+    elementId: NonDeletedExcalidrawElement["id"],
   ) => void;
   onRevealDragStart: (
-    event: React.DragEvent<HTMLDivElement>,
+    event: React.DragEvent<HTMLElement>,
     frameId: PresentationFrame["id"],
-    order: number,
+    elementId: NonDeletedExcalidrawElement["id"],
   ) => void;
   onRevealDrop: (
     event: React.DragEvent<HTMLDivElement>,
-    frameId: PresentationFrame["id"],
-    order: number,
+    frame: PresentationFrame,
+    elementId: NonDeletedExcalidrawElement["id"],
   ) => void;
   onToggleHidden: (frame: PresentationFrame, hidden: boolean) => void;
   presentationActive: boolean;
   revealDropIndicator: RevealDropIndicator;
-  revealSteps: PresentationRevealStep[];
   signature: string;
+  viewBackgroundColor: AppState["viewBackgroundColor"];
 }) => {
   const derivedTitle = getPresentationFrameTitle(frame) ?? "";
   const [draftTitle, setDraftTitle] = useState(derivedTitle);
+  const revealItems = getPresentationFrameReveals(frame, elements);
+  const [isRevealsOpen, setIsRevealsOpen] = useState(revealItems.length > 0);
+  const elementById = new Map(elements.map((element) => [element.id, element]));
+  const revealElementLabels = new Map(
+    revealItems.map((item) => {
+      if (!item.element) {
+        return [
+          item.reveal.elementId,
+          item.reason === "moved"
+            ? t("presentation.movedObject")
+            : t("presentation.missingObject"),
+        ] as const;
+      }
+
+      const boundTextId = item.element.boundElements?.find(
+        (boundElement) => boundElement.type === "text",
+      )?.id;
+      const boundText =
+        boundTextId && elementById.get(boundTextId)?.type === "text"
+          ? elementById.get(boundTextId)
+          : null;
+      const text =
+        item.element.type === "text"
+          ? item.element.originalText || item.element.text
+          : boundText?.type === "text"
+          ? boundText.originalText || boundText.text
+          : "";
+      const fallback = item.element.type.replace(/^\w/, (letter) =>
+        letter.toUpperCase(),
+      );
+
+      return [
+        item.reveal.elementId,
+        text.trim() ? text.trim().slice(0, 64) : fallback,
+      ] as const;
+    }),
+  );
 
   useEffect(() => {
     setDraftTitle(derivedTitle);
   }, [derivedTitle]);
+
+  useEffect(() => {
+    if (revealItems.length > 0) {
+      setIsRevealsOpen(true);
+    }
+  }, [revealItems.length]);
 
   const commitTitle = useCallback(() => {
     onCommitTitle(frame, draftTitle.trim() || undefined);
@@ -285,8 +330,10 @@ const PresentationSidebarRow = ({
       <div className="PresentationSidebar__order">{index + 1}</div>
       <PresentationFrameThumbnail
         elements={elements}
+        exportWithDarkMode={exportWithDarkMode}
         frame={frame}
         signature={signature}
+        viewBackgroundColor={viewBackgroundColor}
       />
       <div className="PresentationSidebar__content">
         <div className="PresentationSidebar__titleRow">
@@ -302,7 +349,7 @@ const PresentationSidebarRow = ({
               }
               event.stopPropagation();
             }}
-            placeholder={t("presentation.untitledFrame")}
+            placeholder={t("presentation.addFrameTitle")}
             value={draftTitle}
           />
           {isHidden && (
@@ -353,64 +400,142 @@ const PresentationSidebarRow = ({
           {chevronRight}
         </Button>
       </div>
-      {revealSteps.length > 0 && (
-        <div
-          className="PresentationSidebar__effects"
-          data-testid={`presentation-effects-${frame.id}`}
-          onClick={stopPropagation}
-        >
-          <div className="PresentationSidebar__effectsTitle">
-            {t("presentation.effects")}
-          </div>
-          {revealSteps.map((step, stepIndex) => {
-            const canDragStep = canDrag && revealSteps.length > 1;
+      {revealItems.length > 0 && (
+        <div className="PresentationSidebar__reveals" onClick={stopPropagation}>
+          <button
+            aria-expanded={isRevealsOpen}
+            className="PresentationSidebar__revealsToggle"
+            data-testid={`presentation-reveals-toggle-${frame.id}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsRevealsOpen((isOpen) => !isOpen);
+            }}
+            type="button"
+          >
+            {isRevealsOpen ? collapseUpIcon : collapseDownIcon}
+            <span>{t("presentation.reveals")}</span>
+            <span className="PresentationSidebar__revealsCount">
+              {revealItems.filter((item) => item.isValid).length}
+            </span>
+          </button>
+          {isRevealsOpen && (
+            <div className="PresentationSidebar__revealList">
+              {revealItems.map((item, revealIndex) => {
+                const isRevealDragging =
+                  draggedReveal?.frameId === frame.id &&
+                  draggedReveal.elementId === item.reveal.elementId;
+                const isRevealDropTarget =
+                  revealDropIndicator?.frameId === frame.id &&
+                  revealDropIndicator.elementId === item.reveal.elementId;
 
-            return (
-              <div
-                className={clsx("PresentationSidebar__effectRow", {
-                  "PresentationSidebar__effectRow--dropBefore":
-                    revealDropIndicator?.frameId === frame.id &&
-                    revealDropIndicator.order === step.order &&
-                    revealDropIndicator.position === "before",
-                  "PresentationSidebar__effectRow--dropAfter":
-                    revealDropIndicator?.frameId === frame.id &&
-                    revealDropIndicator.order === step.order &&
-                    revealDropIndicator.position === "after",
-                })}
-                data-testid={`presentation-effect-row-${frame.id}-${step.order}`}
-                draggable={canDragStep}
-                key={step.order}
-                onDragEnd={onRevealDragEnd}
-                onDragOver={(event) =>
-                  onRevealDragOver(event, frame.id, step.order)
-                }
-                onDragStart={(event) =>
-                  onRevealDragStart(event, frame.id, step.order)
-                }
-                onDrop={(event) => onRevealDrop(event, frame.id, step.order)}
-              >
-                {canDragStep && (
-                  <span
-                    aria-hidden={true}
-                    className="PresentationSidebar__effectDragHandle"
+                return (
+                  <div
+                    className={clsx("PresentationSidebar__revealRow", {
+                      "PresentationSidebar__revealRow--invalid": !item.isValid,
+                      "PresentationSidebar__revealRow--dragging":
+                        isRevealDragging,
+                      "PresentationSidebar__revealRow--dropBefore":
+                        isRevealDropTarget &&
+                        revealDropIndicator?.position === "before",
+                      "PresentationSidebar__revealRow--dropAfter":
+                        isRevealDropTarget &&
+                        revealDropIndicator?.position === "after",
+                    })}
+                    data-testid={`presentation-reveal-row-${item.reveal.elementId}`}
+                    key={`${item.reveal.elementId}:${item.reveal.order}`}
+                    onDragOver={(event) =>
+                      onRevealDragOver(event, frame.id, item.reveal.elementId)
+                    }
+                    onDrop={(event) =>
+                      onRevealDrop(event, frame, item.reveal.elementId)
+                    }
                   >
-                    {DotsIcon}
-                  </span>
-                )}
-                <span className="PresentationSidebar__effectIndex">
-                  {t("presentation.effectStep", { index: stepIndex + 1 })}
-                </span>
-                <span className="PresentationSidebar__effectName">
-                  {getRevealStepEffectLabel(step)}
-                </span>
-                <span className="PresentationSidebar__effectCount">
-                  {t("presentation.effectElementCount", {
-                    count: step.reveals.length,
-                  })}
-                </span>
-              </div>
-            );
-          })}
+                    <div className="PresentationSidebar__revealOrder">
+                      {revealIndex + 1}
+                    </div>
+                    <div
+                      className="PresentationSidebar__revealLabel"
+                      title={revealElementLabels.get(item.reveal.elementId)}
+                    >
+                      {revealElementLabels.get(item.reveal.elementId)}
+                    </div>
+                    <div className="PresentationSidebar__revealEffect">
+                      {item.reveal.effect === "disappear"
+                        ? t("presentation.effectDisappear")
+                        : item.reveal.effect === "fadeOut"
+                        ? t("presentation.effectFadeOut")
+                        : item.reveal.effect === "appear"
+                        ? t("presentation.effectAppear")
+                        : t("presentation.effectFadeIn")}
+                    </div>
+                    <div className="PresentationSidebar__revealActions">
+                      {canDrag && (
+                        <button
+                          aria-label={t("presentation.reveals")}
+                          className="excalidraw-button PresentationSidebar__iconButton PresentationSidebar__dragHandle"
+                          data-testid={`presentation-reveal-drag-${item.reveal.elementId}`}
+                          draggable={true}
+                          onDragEnd={onRevealDragEnd}
+                          onDragStart={(event) =>
+                            onRevealDragStart(
+                              event,
+                              frame.id,
+                              item.reveal.elementId,
+                            )
+                          }
+                          title={t("presentation.reveals")}
+                          type="button"
+                        >
+                          {DotsIcon}
+                        </button>
+                      )}
+                      <Button
+                        aria-label={t("presentation.moveRevealUp")}
+                        className="PresentationSidebar__iconButton"
+                        data-testid={`presentation-reveal-move-up-${item.reveal.elementId}`}
+                        disabled={revealIndex === 0}
+                        onSelect={() =>
+                          onMoveReveal(frame, item.reveal.elementId, -1)
+                        }
+                        title={t("presentation.moveRevealUp")}
+                      >
+                        {collapseUpIcon}
+                      </Button>
+                      <Button
+                        aria-label={t("presentation.moveRevealDown")}
+                        className="PresentationSidebar__iconButton"
+                        data-testid={`presentation-reveal-move-down-${item.reveal.elementId}`}
+                        disabled={revealIndex === revealItems.length - 1}
+                        onSelect={() =>
+                          onMoveReveal(frame, item.reveal.elementId, 1)
+                        }
+                        title={t("presentation.moveRevealDown")}
+                      >
+                        {collapseDownIcon}
+                      </Button>
+                      <Button
+                        aria-label={t("presentation.removeRevealAction")}
+                        className="PresentationSidebar__iconButton"
+                        data-testid={`presentation-reveal-remove-${item.reveal.elementId}`}
+                        onPointerDown={stopPropagation}
+                        onPointerUp={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onRemoveReveal(frame, item.reveal.elementId);
+                        }}
+                        onSelect={() =>
+                          onRemoveReveal(frame, item.reveal.elementId)
+                        }
+                        title={t("presentation.removeRevealAction")}
+                      >
+                        {TrashIcon}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -427,83 +552,60 @@ export const PresentationSidebar = memo(() => {
   const [draggedFrameId, setDraggedFrameId] = useState<
     PresentationFrame["id"] | null
   >(null);
-  const [dropIndicator, setDropIndicator] = useState<FrameDropIndicator>(null);
-  const [draggedRevealStep, setDraggedRevealStep] =
-    useState<DraggedRevealStep>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator>(null);
+  const [draggedReveal, setDraggedReveal] = useState<DraggedReveal>(null);
   const [revealDropIndicator, setRevealDropIndicator] =
     useState<RevealDropIndicator>(null);
+  const [, setSidebarRevision] = useState(0);
 
-  const orderedFrames = useMemo(
-    () => getOrderedPresentationFrames(elements),
-    [elements],
-  );
-  const visibleFrames = useMemo(
-    () => getVisiblePresentationFrames(orderedFrames),
-    [orderedFrames],
-  );
-  const previewSignatures = useMemo(
-    () => getPresentationFramePreviewSignatures(elements),
-    [elements],
-  );
+  useEffect(() => {
+    const unsubscribe = app.scene.onUpdate(() => {
+      setSidebarRevision((revision) => revision + 1);
+    });
+
+    return () => {
+      try {
+        unsubscribe();
+      } catch {
+        // The scene can be destroyed before React effect cleanup in tests.
+      }
+    };
+  }, [app.scene]);
+
+  const orderedFrames = getOrderedPresentationFrames(elements);
+  const visibleFrames = getVisiblePresentationFrames(orderedFrames);
+  const previewSignatures = getPresentationFramePreviewSignatures(elements);
+  const previewAppearanceSignature = `${appState.theme}:${appState.viewBackgroundColor}`;
   const canDrag = editorInterface.formFactor !== "phone";
   const getDraggedFrameId = useCallback(
-    (event: Pick<React.DragEvent, "dataTransfer">) => {
-      const frameId =
-        draggedFrameId ||
-        event.dataTransfer.getData(FRAME_DRAG_DATA_TYPE) ||
-        event.dataTransfer.getData("text/plain");
-
-      return frameId && !frameId.startsWith(REVEAL_DRAG_PLAIN_PREFIX)
-        ? (frameId as PresentationFrame["id"])
-        : null;
-    },
+    (event: Pick<React.DragEvent, "dataTransfer">) =>
+      draggedFrameId ||
+      (event.dataTransfer.getData("text/plain") as PresentationFrame["id"]) ||
+      null,
     [draggedFrameId],
   );
-  const getDraggedRevealStep = useCallback(
-    (event: Pick<React.DragEvent, "dataTransfer">): DraggedRevealStep => {
-      if (draggedRevealStep) {
-        return draggedRevealStep;
+  const getDraggedReveal = useCallback(
+    (event: Pick<React.DragEvent, "dataTransfer">) => {
+      if (draggedReveal) {
+        return draggedReveal;
       }
 
-      const serializedReveal = event.dataTransfer.getData(
-        REVEAL_DRAG_DATA_TYPE,
+      const rawPayload = event.dataTransfer.getData(
+        PRESENTATION_REVEAL_DRAG_MIME,
       );
 
-      if (serializedReveal) {
-        try {
-          const parsed = JSON.parse(serializedReveal);
-
-          if (
-            typeof parsed.frameId === "string" &&
-            typeof parsed.order === "number"
-          ) {
-            return {
-              frameId: parsed.frameId as PresentationFrame["id"],
-              order: parsed.order,
-            };
-          }
-        } catch {
-          return null;
-        }
+      if (!rawPayload) {
+        return null;
       }
 
-      const plainText = event.dataTransfer.getData("text/plain");
-
-      if (plainText.startsWith(REVEAL_DRAG_PLAIN_PREFIX)) {
-        const [, frameId, order] = plainText.split(":");
-        const parsedOrder = Number(order);
-
-        if (frameId && Number.isFinite(parsedOrder)) {
-          return {
-            frameId: frameId as PresentationFrame["id"],
-            order: parsedOrder,
-          };
-        }
+      try {
+        const payload = JSON.parse(rawPayload) as DraggedReveal;
+        return payload?.frameId && payload.elementId ? payload : null;
+      } catch {
+        return null;
       }
-
-      return null;
     },
-    [draggedRevealStep],
+    [draggedReveal],
   );
 
   const currentFrameId = appState.presentationMode.active
@@ -518,16 +620,19 @@ export const PresentationSidebar = memo(() => {
 
   const scrollToFrame = useCallback(
     (frame: PresentationFrame, animate = true) => {
+      const previousFrame =
+        orderedFrames.find(
+          (orderedFrame) => orderedFrame.id === currentFrameId,
+        ) ?? null;
+
       app.scrollToContent(frame, {
         animate,
-        duration:
-          getPresentationFrameDuration(frame) ??
-          DEFAULT_PRESENTATION_TRANSITION_DURATION,
+        duration: getPresentationFrameDuration(frame, previousFrame),
         fitToViewport: true,
         viewportZoomFactor: PRESENTATION_VIEWPORT_ZOOM_FACTOR,
       });
     },
-    [app],
+    [app, currentFrameId, orderedFrames],
   );
 
   const setPresentationState = useCallback(
@@ -556,10 +661,16 @@ export const PresentationSidebar = memo(() => {
       updates: Parameters<typeof buildFramePresentationCustomData>[1],
       informMutation = true,
     ) => {
+      const currentFrame = app.scene.getNonDeletedElementsMap().get(frame.id);
+
+      if (!currentFrame || !isFrameElement(currentFrame)) {
+        return;
+      }
+
       app.scene.mutateElement(
-        frame,
+        currentFrame,
         {
-          customData: buildFramePresentationCustomData(frame, updates),
+          customData: buildFramePresentationCustomData(currentFrame, updates),
         },
         { informMutation, isDragging: false },
       );
@@ -614,7 +725,11 @@ export const PresentationSidebar = memo(() => {
           return;
         }
 
-        setPresentationState({ currentFrameId: frame.id });
+        setPresentationState({
+          currentFrameId: frame.id,
+          visibleRevealCount: 0,
+          revealAnimation: null,
+        });
         scrollToFrame(frame);
         focusEditor();
         return;
@@ -635,12 +750,9 @@ export const PresentationSidebar = memo(() => {
 
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLElement>, frameId: PresentationFrame["id"]) => {
-      event.dataTransfer.setData(FRAME_DRAG_DATA_TYPE, frameId);
       event.dataTransfer.setData("text/plain", frameId);
       setDraggedFrameId(frameId);
       setDropIndicator(null);
-      setDraggedRevealStep(null);
-      setRevealDropIndicator(null);
     },
     [],
   );
@@ -694,27 +806,50 @@ export const PresentationSidebar = memo(() => {
     [applyFrameOrder, getDraggedFrameId, orderedFrames],
   );
 
+  const handleRemoveReveal = useCallback(
+    (
+      frame: PresentationFrame,
+      elementId: NonDeletedExcalidrawElement["id"],
+    ) => {
+      updateFrameMetadata(frame, {
+        reveals: removePresentationReveals(frame, [elementId]),
+      });
+    },
+    [updateFrameMetadata],
+  );
+
+  const handleMoveReveal = useCallback(
+    (
+      frame: PresentationFrame,
+      elementId: NonDeletedExcalidrawElement["id"],
+      direction: -1 | 1,
+    ) => {
+      updateFrameMetadata(frame, {
+        reveals: movePresentationReveal(
+          getPresentationReveals(frame),
+          elementId,
+          direction,
+        ),
+      });
+    },
+    [updateFrameMetadata],
+  );
+
   const handleRevealDragStart = useCallback(
     (
-      event: React.DragEvent<HTMLDivElement>,
+      event: React.DragEvent<HTMLElement>,
       frameId: PresentationFrame["id"],
-      order: number,
+      elementId: NonDeletedExcalidrawElement["id"],
     ) => {
-      event.stopPropagation();
+      const payload = { frameId, elementId };
 
-      const payload = { frameId, order };
+      event.stopPropagation();
       event.dataTransfer.setData(
-        REVEAL_DRAG_DATA_TYPE,
+        PRESENTATION_REVEAL_DRAG_MIME,
         JSON.stringify(payload),
       );
-      event.dataTransfer.setData(
-        "text/plain",
-        `${REVEAL_DRAG_PLAIN_PREFIX}${frameId}:${order}`,
-      );
-      setDraggedRevealStep(payload);
+      setDraggedReveal(payload);
       setRevealDropIndicator(null);
-      setDraggedFrameId(null);
-      setDropIndicator(null);
     },
     [],
   );
@@ -723,68 +858,61 @@ export const PresentationSidebar = memo(() => {
     (
       event: React.DragEvent<HTMLDivElement>,
       frameId: PresentationFrame["id"],
-      order: number,
+      elementId: NonDeletedExcalidrawElement["id"],
     ) => {
-      event.stopPropagation();
-
-      const activeRevealStep = getDraggedRevealStep(event);
+      const activeDraggedReveal = getDraggedReveal(event);
 
       if (
-        !activeRevealStep ||
-        activeRevealStep.frameId !== frameId ||
-        activeRevealStep.order === order
+        !activeDraggedReveal ||
+        activeDraggedReveal.frameId !== frameId ||
+        activeDraggedReveal.elementId === elementId
       ) {
         return;
       }
 
       event.preventDefault();
+      event.stopPropagation();
+      setDraggedReveal(activeDraggedReveal);
       setRevealDropIndicator({
         frameId,
-        order,
+        elementId,
         position: getDropPosition(event),
       });
     },
-    [getDraggedRevealStep],
+    [getDraggedReveal],
   );
 
   const handleRevealDrop = useCallback(
     (
       event: React.DragEvent<HTMLDivElement>,
-      frameId: PresentationFrame["id"],
-      order: number,
+      frame: PresentationFrame,
+      elementId: NonDeletedExcalidrawElement["id"],
     ) => {
+      const activeDraggedReveal = getDraggedReveal(event);
+
       event.preventDefault();
       event.stopPropagation();
 
-      const activeRevealStep = getDraggedRevealStep(event);
-      const targetFrame = orderedFrames.find((frame) => frame.id === frameId);
-
       if (
-        activeRevealStep &&
-        targetFrame &&
-        activeRevealStep.frameId === frameId &&
-        activeRevealStep.order !== order
+        activeDraggedReveal &&
+        activeDraggedReveal.frameId === frame.id &&
+        activeDraggedReveal.elementId !== elementId
       ) {
-        updateFrameMetadata(targetFrame, {
-          reveals: reorderPresentationFrameRevealSteps(
-            targetFrame,
-            activeRevealStep.order,
-            order,
+        updateFrameMetadata(frame, {
+          reveals: reorderPresentationReveals(
+            getFramePresentationData(frame)?.reveals ?? [],
+            activeDraggedReveal.elementId,
+            elementId,
             getDropPosition(event),
           ),
         });
       }
 
-      setDraggedRevealStep(null);
+      setDraggedReveal(null);
       setRevealDropIndicator(null);
     },
-    [getDraggedRevealStep, orderedFrames, updateFrameMetadata],
+    [getDraggedReveal, updateFrameMetadata],
   );
-
-  const handleRevealDragEnd = useCallback(() => {
-    setDraggedRevealStep(null);
-    setRevealDropIndicator(null);
-  }, []);
 
   const frameCountLabel = `${visibleFrames.length}/${orderedFrames.length}`;
 
@@ -818,7 +946,9 @@ export const PresentationSidebar = memo(() => {
             {orderedFrames.map((frame, index) => (
               <PresentationSidebarRow
                 canDrag={canDrag}
+                draggedReveal={draggedReveal}
                 elements={elements}
+                exportWithDarkMode={appState.theme === THEME.DARK}
                 frame={frame}
                 index={index}
                 isCurrent={frame.id === currentFrameId}
@@ -832,14 +962,17 @@ export const PresentationSidebar = memo(() => {
                 onDragEnd={() => {
                   setDraggedFrameId(null);
                   setDropIndicator(null);
-                  setDraggedRevealStep(null);
-                  setRevealDropIndicator(null);
                 }}
                 onDragOver={handleDragOver}
                 onDragStart={handleDragStart}
                 onDrop={handleDrop}
                 onJumpToFrame={handleJumpToFrame}
-                onRevealDragEnd={handleRevealDragEnd}
+                onMoveReveal={handleMoveReveal}
+                onRemoveReveal={handleRemoveReveal}
+                onRevealDragEnd={() => {
+                  setDraggedReveal(null);
+                  setRevealDropIndicator(null);
+                }}
                 onRevealDragOver={handleRevealDragOver}
                 onRevealDragStart={handleRevealDragStart}
                 onRevealDrop={handleRevealDrop}
@@ -848,8 +981,10 @@ export const PresentationSidebar = memo(() => {
                 }
                 presentationActive={appState.presentationMode.active}
                 revealDropIndicator={revealDropIndicator}
-                revealSteps={getPresentationRevealSteps(frame)}
-                signature={previewSignatures.get(frame.id) ?? frame.id}
+                signature={`${
+                  previewSignatures.get(frame.id) ?? frame.id
+                }:${previewAppearanceSignature}`}
+                viewBackgroundColor={appState.viewBackgroundColor}
               />
             ))}
           </div>

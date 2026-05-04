@@ -142,7 +142,6 @@ import {
   isBindingElement,
   isBindingElementType,
   isBoundToContainer,
-  isFrameElement,
   isFrameLikeElement,
   isImageElement,
   isEmbeddableElement,
@@ -337,6 +336,7 @@ import {
   actionWrapSelectionInFrame,
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
+import { actionRemovePresentationReveal } from "../actions/actionPresentation";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
@@ -362,6 +362,7 @@ import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
 import { History } from "../history";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
+import { getPresentationFrameLabel } from "../presentation/framePresentation";
 
 import {
   calculateScrollCenter,
@@ -428,7 +429,6 @@ import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
 
 import { EraserTrail } from "../eraser";
-import { getPresentationElementOpacityMap } from "../presentation/framePresentation";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -1946,7 +1946,7 @@ class App extends React.Component<AppProps, AppState> {
           : null
         : null;
 
-    return nonDeletedFramesLikes.map((f) => {
+    return nonDeletedFramesLikes.map((f, frameIndex) => {
       if (
         !isElementInViewport(
           f,
@@ -1978,7 +1978,10 @@ class App extends React.Component<AppProps, AppState> {
 
       let frameNameJSX;
 
-      const frameName = getFrameLikeTitle(f);
+      const frameName =
+        f.name === null
+          ? getPresentationFrameLabel(f, frameIndex)
+          : getFrameLikeTitle(f);
 
       if (f.id === this.state.editingFrame) {
         const frameNameInEdit = frameName;
@@ -2058,6 +2061,19 @@ class App extends React.Component<AppProps, AppState> {
             color: isDarkTheme
               ? FRAME_STYLE.nameColorDarkTheme
               : FRAME_STYLE.nameColorLightTheme,
+            background: isDarkTheme
+              ? "rgba(20, 20, 24, 0.82)"
+              : "rgba(255, 255, 255, 0.88)",
+            border: `1px solid ${
+              isDarkTheme ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)"
+            }`,
+            borderRadius: 6,
+            boxShadow: isDarkTheme
+              ? "0 2px 8px rgba(0, 0, 0, 0.22)"
+              : "0 2px 8px rgba(15, 23, 42, 0.08)",
+            padding: "1px 6px",
+            fontWeight: 600,
+            letterSpacing: 0,
             lineHeight: FRAME_STYLE.nameLineHeight,
             width: "max-content",
             maxWidth:
@@ -2111,21 +2127,11 @@ class App extends React.Component<AppProps, AppState> {
         width: this.state.width,
         editingTextElement: this.state.editingTextElement,
         newElementId: this.state.newElement?.id,
+        presentationMode: this.state.presentationMode,
       });
     this.visibleElements = visibleElements;
 
     const allElementsMap = this.scene.getNonDeletedElementsMap();
-    const currentPresentationFrame = this.state.presentationMode.currentFrameId
-      ? allElementsMap.get(this.state.presentationMode.currentFrameId)
-      : null;
-    const presentationElementOpacity =
-      currentPresentationFrame && isFrameElement(currentPresentationFrame)
-        ? getPresentationElementOpacityMap(
-            currentPresentationFrame,
-            allElementsMap,
-            this.state.presentationMode,
-          )
-        : null;
 
     const shouldBlockPointerEvents =
       // default back to `--ui-pointerEvents` flow if setPointerCapture
@@ -2359,7 +2365,6 @@ class App extends React.Component<AppProps, AppState> {
                                 this.elementsPendingErasure,
                               pendingFlowchartNodes:
                                 this.flowChartCreator.pendingNodes,
-                              presentationElementOpacity,
                               theme: this.state.theme,
                             }}
                           />
@@ -12563,6 +12568,19 @@ class App extends React.Component<AppProps, AppState> {
             actionBringToFront,
           ]
         : [];
+    const presentationRevealActions = [actionRemovePresentationReveal].filter(
+      (action) =>
+        action.predicate?.(
+          this.scene.getElementsIncludingDeleted(),
+          this.state,
+          this.props,
+          this,
+        ),
+    );
+    const presentationRevealMenuItems: ContextMenuItems =
+      presentationRevealActions.length > 0
+        ? [CONTEXT_MENU_SEPARATOR, ...presentationRevealActions]
+        : [];
 
     return [
       CONTEXT_MENU_SEPARATOR,
@@ -12573,6 +12591,7 @@ class App extends React.Component<AppProps, AppState> {
       actionSelectAllElementsInFrame,
       actionRemoveAllElementsFromFrame,
       actionWrapSelectionInFrame,
+      ...presentationRevealMenuItems,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
       CONTEXT_MENU_SEPARATOR,

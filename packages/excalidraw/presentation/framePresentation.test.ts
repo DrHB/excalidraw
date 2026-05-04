@@ -1,22 +1,35 @@
 import { arrayToMap } from "@excalidraw/common";
-import { newElement, newFrameElement } from "@excalidraw/element";
+import {
+  newElement,
+  newFrameElement,
+  newTextElement,
+} from "@excalidraw/element";
 
 import {
+  appendPresentationReveals,
   buildFramePresentationCustomData,
   collectPresentationFrames,
   getAdjacentPresentationFrame,
-  getFramePresentationData,
+  getAdaptivePresentationFrameDuration,
   getOrderedPresentationFrames,
-  getPresentationElementOpacityMap,
+  getPresentationFrameDuration,
+  getPresentationFrameLabel,
   getPresentationFramePreviewSignatures,
-  getPresentationRevealEffectForElements,
-  getPresentationRevealSteps,
+  getPresentationFrameRevealItems,
+  getPresentationFrameReveals,
+  getPresentationRevealRemovalUpdatesForElements,
+  getPresentationRevealRenderState,
+  getPresentationRevealSelection,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
+  MAX_PRESENTATION_TRANSITION_DURATION,
+  MIN_PRESENTATION_TRANSITION_DURATION,
   movePresentationFrame,
-  reorderPresentationFrameRevealSteps,
+  movePresentationReveal,
+  removePresentationReveals,
   reorderPresentationFrames,
-  updatePresentationFrameReveals,
+  reorderPresentationReveals,
+  setPresentationRevealEffects,
 } from "./framePresentation";
 
 const createFrame = (name?: string, x = 0) =>
@@ -53,6 +66,58 @@ describe("framePresentation helpers", () => {
       frameA.id,
       frameC.id,
     ]);
+  });
+
+  it("uses sequential fallback labels for unnamed frames", () => {
+    const frameA = createFrame();
+    const frameB = createFrame("Custom");
+
+    expect(getPresentationFrameLabel(frameA, 0)).toBe("1");
+    expect(getPresentationFrameLabel(frameB, 1)).toBe("Custom");
+  });
+
+  it("adapts transition duration to frame distance and scale", () => {
+    const frameA = createFrame("A");
+    const nearbyFrame = createFrame("B", 230);
+    const farFrame = createFrame("C", 1600);
+    const tinyFrame = newFrameElement({
+      x: 1700,
+      y: 0,
+      width: 60,
+      height: 40,
+      name: "Tiny",
+    });
+
+    const nearbyDuration = getAdaptivePresentationFrameDuration(
+      frameA,
+      nearbyFrame,
+    );
+    const farDuration = getAdaptivePresentationFrameDuration(frameA, farFrame);
+    const scaleDuration = getAdaptivePresentationFrameDuration(
+      frameA,
+      tinyFrame,
+    );
+
+    expect(nearbyDuration).toBeGreaterThanOrEqual(
+      MIN_PRESENTATION_TRANSITION_DURATION,
+    );
+    expect(farDuration).toBeGreaterThan(nearbyDuration);
+    expect(scaleDuration).toBeGreaterThan(nearbyDuration);
+    expect(farDuration).toBeLessThanOrEqual(
+      MAX_PRESENTATION_TRANSITION_DURATION,
+    );
+    expect(scaleDuration).toBeLessThanOrEqual(
+      MAX_PRESENTATION_TRANSITION_DURATION,
+    );
+  });
+
+  it("honors explicit transition duration metadata", () => {
+    const frameA = createFrame("A");
+    const frameB = withPresentationData(createFrame("B", 1000), {
+      transition: { durationMs: 420 },
+    });
+
+    expect(getPresentationFrameDuration(frameB, frameA)).toBe(420);
   });
 
   it("uses scene order when metadata order is duplicated or missing", () => {
@@ -117,7 +182,7 @@ describe("framePresentation helpers", () => {
         unrelated: { keep: true },
         storyplanePresentation: {
           version: 1,
-          reveals: [{ elementId: "el1", order: 0, effect: "fadeIn" }],
+          reveals: [{ elementId: "el1", order: 0, effect: "fade" }],
         },
       },
     };
@@ -139,184 +204,6 @@ describe("framePresentation helpers", () => {
       title: "Scene 1",
       reveals: [{ elementId: "el1", order: 0, effect: "fadeIn" }],
     });
-  });
-
-  it("normalizes legacy and invalid reveal effects", () => {
-    const frame = {
-      ...createFrame("Intro"),
-      customData: {
-        storyplanePresentation: {
-          version: 1,
-          reveals: [
-            { elementId: "a", order: 3, effect: "fade" },
-            { elementId: "b", order: 8, effect: "none" },
-            { elementId: "c", order: 10, effect: "unknown" },
-          ],
-        },
-      },
-    };
-
-    expect(getFramePresentationData(frame)?.reveals).toEqual([
-      { elementId: "a", order: 0, effect: "fadeIn", durationMs: undefined },
-    ]);
-  });
-
-  it("adds, replaces, and removes selected element reveal effects", () => {
-    const frame = createFrame("Effects");
-    const initialReveals = updatePresentationFrameReveals(
-      frame,
-      ["a", "b"],
-      "appear",
-    );
-    const frameWithInitialReveals = withPresentationData(frame, {
-      reveals: initialReveals,
-    });
-
-    expect(initialReveals).toEqual([
-      { elementId: "a", order: 0, effect: "appear", durationMs: undefined },
-      { elementId: "b", order: 0, effect: "appear", durationMs: undefined },
-    ]);
-    expect(
-      getPresentationRevealEffectForElements(frameWithInitialReveals, [
-        "a",
-        "b",
-      ]),
-    ).toBe("appear");
-
-    const replacedReveals = updatePresentationFrameReveals(
-      frameWithInitialReveals,
-      ["a"],
-      "fadeOut",
-    );
-    const frameWithReplacedReveal = withPresentationData(frame, {
-      reveals: replacedReveals,
-    });
-
-    expect(getPresentationRevealSteps(frameWithReplacedReveal)).toMatchObject([
-      {
-        order: 0,
-        reveals: [
-          { elementId: "b", effect: "appear" },
-          { elementId: "a", effect: "fadeOut" },
-        ],
-      },
-    ]);
-    expect(
-      updatePresentationFrameReveals(frameWithReplacedReveal, ["a"], "none"),
-    ).toEqual([
-      { elementId: "b", order: 0, effect: "appear", durationMs: undefined },
-    ]);
-    expect(
-      updatePresentationFrameReveals(
-        frameWithInitialReveals,
-        ["a", "b"],
-        "none",
-      ),
-    ).toBeUndefined();
-  });
-
-  it("reorders reveal steps while preserving grouped effects", () => {
-    const frame = withPresentationData(createFrame("Effects"), {
-      reveals: [
-        { elementId: "a", order: 0, effect: "appear" },
-        { elementId: "b", order: 0, effect: "appear" },
-        { elementId: "c", order: 1, effect: "fadeIn" },
-      ],
-    });
-
-    expect(reorderPresentationFrameRevealSteps(frame, 1, 0, "before")).toEqual([
-      { elementId: "c", order: 0, effect: "fadeIn", durationMs: undefined },
-      { elementId: "a", order: 1, effect: "appear", durationMs: undefined },
-      { elementId: "b", order: 1, effect: "appear", durationMs: undefined },
-    ]);
-  });
-
-  it("computes render opacity for reveal playback without mutating elements", () => {
-    const frame = withPresentationData(createFrame("Opacity"), {
-      reveals: [
-        { elementId: "appear", order: 0, effect: "appear" },
-        { elementId: "fade", order: 1, effect: "fadeIn", durationMs: 100 },
-        { elementId: "disappear", order: 2, effect: "disappear" },
-      ],
-    });
-    const appearElement = {
-      ...newElement({
-        type: "rectangle",
-        x: 20,
-        y: 20,
-        width: 40,
-        height: 40,
-        frameId: frame.id,
-      }),
-      id: "appear",
-    };
-    const fadeElement = {
-      ...newElement({
-        type: "rectangle",
-        x: 80,
-        y: 20,
-        width: 40,
-        height: 40,
-        frameId: frame.id,
-      }),
-      id: "fade",
-    };
-    const disappearElement = {
-      ...newElement({
-        type: "rectangle",
-        x: 140,
-        y: 20,
-        width: 40,
-        height: 40,
-        frameId: frame.id,
-      }),
-      id: "disappear",
-    };
-    const elementsMap = arrayToMap([
-      frame,
-      appearElement,
-      fadeElement,
-      disappearElement,
-    ]);
-
-    expect(
-      getPresentationElementOpacityMap(frame, elementsMap, {
-        active: true,
-        currentFrameId: frame.id,
-        currentRevealStep: -1,
-        revealAnimation: null,
-      }),
-    ).toEqual(
-      new Map([
-        ["appear", 0],
-        ["fade", 0],
-      ]),
-    );
-
-    expect(
-      getPresentationElementOpacityMap(frame, elementsMap, {
-        active: true,
-        currentFrameId: frame.id,
-        currentRevealStep: 1,
-        revealAnimation: {
-          frameId: frame.id,
-          order: 1,
-          direction: 1,
-          durationMs: 100,
-          progress: 0.4,
-        },
-      })?.get("fade"),
-    ).toBe(0.4);
-
-    expect(
-      getPresentationElementOpacityMap(frame, elementsMap, {
-        active: true,
-        currentFrameId: frame.id,
-        currentRevealStep: 2,
-        revealAnimation: null,
-      })?.get("disappear"),
-    ).toBe(0);
-    expect(appearElement.opacity).toBe(100);
   });
 
   it("reorders frames deterministically for drag-and-drop", () => {
@@ -439,5 +326,414 @@ describe("framePresentation helpers", () => {
     expect(previewSignatures.get(innerFrame.id)).not.toContain(
       outerFrameOverlap.id,
     );
+  });
+
+  it("qualifies reveal selections by nearest owning presentation frame", () => {
+    const frameA = createFrame("A");
+    const frameB = createFrame("B", 320);
+    const rectA = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frameA.id,
+    });
+    const rectB = newElement({
+      type: "rectangle",
+      x: 340,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frameB.id,
+    });
+    const unownedOverlap = newElement({
+      type: "ellipse",
+      x: 30,
+      y: 30,
+      width: 40,
+      height: 40,
+    });
+    const elementsMap = arrayToMap([
+      frameA,
+      frameB,
+      rectA,
+      rectB,
+      unownedOverlap,
+    ]);
+
+    expect(getPresentationRevealSelection([rectA], elementsMap)?.frame.id).toBe(
+      frameA.id,
+    );
+    expect(getPresentationRevealSelection([rectA, rectB], elementsMap)).toBe(
+      null,
+    );
+    expect(getPresentationRevealSelection([unownedOverlap], elementsMap)).toBe(
+      null,
+    );
+  });
+
+  it("adds, removes, and reorders reveal metadata deterministically", () => {
+    const frame = createFrame("A");
+    const rectA = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const rectB = newElement({
+      type: "ellipse",
+      x: 120,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const rectC = newElement({
+      type: "diamond",
+      x: 220,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const withReveals = withPresentationData(frame, {
+      reveals: appendPresentationReveals(frame, [rectA.id, rectB.id]),
+    });
+
+    expect(
+      getPresentationFrameReveals(withReveals, [withReveals, rectA, rectB]).map(
+        (item) => item.element.id,
+      ),
+    ).toEqual([rectA.id, rectB.id]);
+
+    const appended = appendPresentationReveals(withReveals, [
+      rectA.id,
+      rectC.id,
+    ]);
+    expect(appended.map((reveal) => reveal.elementId)).toEqual([
+      rectA.id,
+      rectB.id,
+      rectC.id,
+    ]);
+
+    const reordered = reorderPresentationReveals(
+      appended,
+      rectC.id,
+      rectA.id,
+      "before",
+    );
+    expect(reordered.map((reveal) => reveal.elementId)).toEqual([
+      rectC.id,
+      rectA.id,
+      rectB.id,
+    ]);
+
+    const moved = movePresentationReveal(reordered, rectB.id, -1);
+    expect(moved.map((reveal) => reveal.elementId)).toEqual([
+      rectC.id,
+      rectB.id,
+      rectA.id,
+    ]);
+
+    const removed = removePresentationReveals(
+      withPresentationData(frame, { reveals: moved }),
+      [rectB.id],
+    );
+    expect(removed.map((reveal) => reveal.elementId)).toEqual([
+      rectC.id,
+      rectA.id,
+    ]);
+  });
+
+  it("sets reveal effects without duplicating or dropping custom metadata", () => {
+    const frame = createFrame("A");
+    const rectA = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const rectB = newElement({
+      type: "ellipse",
+      x: 120,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const frameWithReveal = withPresentationData(frame, {
+      reveals: [
+        {
+          elementId: rectA.id,
+          order: 0,
+          effect: "fade",
+          custom: "preserved",
+        },
+        { elementId: rectA.id, order: 1, effect: "fade" },
+      ],
+    });
+
+    const updated = setPresentationRevealEffects(
+      frameWithReveal,
+      [rectA.id, rectB.id],
+      "disappear",
+    );
+
+    expect(updated).toMatchObject([
+      {
+        elementId: rectA.id,
+        order: 0,
+        effect: "disappear",
+        custom: "preserved",
+      },
+      { elementId: rectB.id, order: 1, effect: "disappear" },
+    ]);
+    expect(
+      updated.filter((reveal) => reveal.elementId === rectA.id),
+    ).toHaveLength(1);
+
+    const switched = setPresentationRevealEffects(
+      withPresentationData(frame, { reveals: updated }),
+      [rectA.id],
+      "fade",
+    );
+
+    expect(switched[0]).toMatchObject({
+      elementId: rectA.id,
+      order: 0,
+      effect: "fadeIn",
+      custom: "preserved",
+    });
+  });
+
+  it("creates reveal removal updates for selected objects and bound text", () => {
+    const frame = createFrame("A");
+    const rectangleBase = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 120,
+      height: 80,
+      frameId: frame.id,
+    });
+    const text = newTextElement({
+      x: 40,
+      y: 40,
+      text: "Bound label",
+      containerId: rectangleBase.id,
+      frameId: frame.id,
+    });
+    const rectangle = {
+      ...rectangleBase,
+      boundElements: [{ type: "text" as const, id: text.id }],
+    };
+    const other = newElement({
+      type: "ellipse",
+      x: 160,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frame.id,
+    });
+    const frameWithReveals = withPresentationData(frame, {
+      reveals: [
+        { elementId: rectangle.id, order: 0, effect: "fade" },
+        { elementId: other.id, order: 1, effect: "fade" },
+      ],
+    });
+    const elementsMap = arrayToMap([frameWithReveals, rectangle, text, other]);
+
+    const updates = getPresentationRevealRemovalUpdatesForElements(
+      [frameWithReveals],
+      [text],
+      elementsMap,
+    );
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].reveals.map((reveal) => reveal.elementId)).toEqual([
+      other.id,
+    ]);
+    expect(updates[0].reveals[0].order).toBe(0);
+  });
+
+  it("skips missing, moved, and duplicate reveal targets at runtime", () => {
+    const frameA = createFrame("A");
+    const frameB = createFrame("B", 320);
+    const rectA = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frameA.id,
+    });
+    const movedRect = newElement({
+      type: "ellipse",
+      x: 340,
+      y: 20,
+      width: 80,
+      height: 48,
+      frameId: frameB.id,
+    });
+    const frameWithReveals = withPresentationData(frameA, {
+      reveals: [
+        { elementId: rectA.id, order: 0, effect: "fade" },
+        { elementId: rectA.id, order: 1, effect: "fade" },
+        { elementId: movedRect.id, order: 2, effect: "fade" },
+        { elementId: "deleted", order: 3, effect: "fade" },
+      ],
+    });
+    const items = getPresentationFrameRevealItems(frameWithReveals, [
+      frameWithReveals,
+      frameB,
+      rectA,
+      movedRect,
+    ]);
+
+    expect(items.map((item) => item.reason ?? "valid")).toEqual([
+      "valid",
+      "duplicate",
+      "moved",
+      "missing",
+    ]);
+    expect(
+      getPresentationFrameReveals(frameWithReveals, [
+        frameWithReveals,
+        frameB,
+        rectA,
+        movedRect,
+      ]).map((item) => item.element.id),
+    ).toEqual([rectA.id]);
+  });
+
+  it("hides bound text with its container during reveal playback", () => {
+    const frame = createFrame("A");
+    const rectangleBase = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 120,
+      height: 80,
+      frameId: frame.id,
+    });
+    const text = newTextElement({
+      x: 40,
+      y: 40,
+      text: "Bound label",
+      containerId: rectangleBase.id,
+      frameId: frame.id,
+    });
+    const rectangle = {
+      ...rectangleBase,
+      boundElements: [{ type: "text" as const, id: text.id }],
+    };
+    const frameWithReveal = withPresentationData(frame, {
+      reveals: [{ elementId: rectangle.id, order: 0, effect: "fade" }],
+    });
+
+    const hiddenState = getPresentationRevealRenderState(
+      [frameWithReveal, rectangle, text],
+      {
+        active: true,
+        currentFrameId: frameWithReveal.id,
+        visibleRevealCount: 0,
+        revealAnimation: null,
+      },
+    );
+    expect(hiddenState.hiddenElementIds.has(rectangle.id)).toBe(true);
+    expect(hiddenState.hiddenElementIds.has(text.id)).toBe(true);
+
+    const animatingState = getPresentationRevealRenderState(
+      [frameWithReveal, rectangle, text],
+      {
+        active: true,
+        currentFrameId: frameWithReveal.id,
+        visibleRevealCount: 1,
+        revealAnimation: {
+          elementId: rectangle.id,
+          progress: 0.5,
+          durationMs: 220,
+        },
+      },
+    );
+    expect(animatingState.hiddenElementIds.has(rectangle.id)).toBe(false);
+    expect(animatingState.hiddenElementIds.has(text.id)).toBe(false);
+    expect(animatingState.opacityByElementId.get(rectangle.id)).toBeGreaterThan(
+      0,
+    );
+    expect(animatingState.opacityByElementId.get(text.id)).toBeGreaterThan(0);
+  });
+
+  it("shows disappear targets until their step and hides bound text after", () => {
+    const frame = createFrame("A");
+    const rectangleBase = newElement({
+      type: "rectangle",
+      x: 20,
+      y: 20,
+      width: 120,
+      height: 80,
+      frameId: frame.id,
+    });
+    const text = newTextElement({
+      x: 40,
+      y: 40,
+      text: "Bound label",
+      containerId: rectangleBase.id,
+      frameId: frame.id,
+    });
+    const rectangle = {
+      ...rectangleBase,
+      boundElements: [{ type: "text" as const, id: text.id }],
+    };
+    const frameWithReveal = withPresentationData(frame, {
+      reveals: [{ elementId: rectangle.id, order: 0, effect: "disappear" }],
+    });
+
+    const initialState = getPresentationRevealRenderState(
+      [frameWithReveal, rectangle, text],
+      {
+        active: true,
+        currentFrameId: frameWithReveal.id,
+        visibleRevealCount: 0,
+        revealAnimation: null,
+      },
+    );
+    expect(initialState.hiddenElementIds.has(rectangle.id)).toBe(false);
+    expect(initialState.hiddenElementIds.has(text.id)).toBe(false);
+
+    const animatingState = getPresentationRevealRenderState(
+      [frameWithReveal, rectangle, text],
+      {
+        active: true,
+        currentFrameId: frameWithReveal.id,
+        visibleRevealCount: 1,
+        revealAnimation: {
+          elementId: rectangle.id,
+          progress: 0.5,
+          durationMs: 220,
+        },
+      },
+    );
+    expect(animatingState.hiddenElementIds.has(rectangle.id)).toBe(false);
+    expect(animatingState.hiddenElementIds.has(text.id)).toBe(false);
+    expect(animatingState.opacityByElementId.get(rectangle.id)).toBeLessThan(1);
+    expect(animatingState.opacityByElementId.get(text.id)).toBeLessThan(1);
+
+    const hiddenState = getPresentationRevealRenderState(
+      [frameWithReveal, rectangle, text],
+      {
+        active: true,
+        currentFrameId: frameWithReveal.id,
+        visibleRevealCount: 1,
+        revealAnimation: null,
+      },
+    );
+    expect(hiddenState.hiddenElementIds.has(rectangle.id)).toBe(true);
+    expect(hiddenState.hiddenElementIds.has(text.id)).toBe(true);
   });
 });

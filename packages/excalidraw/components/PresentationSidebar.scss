@@ -4,17 +4,20 @@
   .PresentationSidebar {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.875rem;
     height: 100%;
     min-height: 0;
-    padding: 0.75rem;
+    overflow: hidden;
+    padding: 0.875rem;
   }
 
   .PresentationSidebar__header {
+    flex: 0 0 auto;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.875rem;
+    padding: 0 0.125rem;
   }
 
   .PresentationSidebar__title {
@@ -27,18 +30,18 @@
     margin-top: 0.25rem;
     color: var(--text-secondary-color);
     font-size: 0.75rem;
-    line-height: 1.45;
+    line-height: 1.35;
   }
 
   .PresentationSidebar__count {
     flex-shrink: 0;
-    min-width: 3.25rem;
-    padding: 0.35rem 0.5rem;
+    min-width: 2.75rem;
+    padding: 0.25rem 0.45rem;
     border: 1px solid var(--default-border-color);
     border-radius: var(--border-radius-md);
-    background: var(--color-surface-low);
+    background: var(--island-bg-color);
     color: var(--text-secondary-color);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 600;
     text-align: center;
   }
@@ -62,28 +65,35 @@
     flex-direction: column;
     gap: 0.5rem;
     min-height: 0;
+    overscroll-behavior: contain;
     overflow-y: auto;
-    padding-right: 0.125rem;
+    padding: 0.125rem 0.125rem 0.25rem;
   }
 
   .PresentationSidebar__row {
     position: relative;
     display: grid;
-    grid-template-columns: 2rem 5rem minmax(0, 1fr);
+    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
     grid-template-areas:
-      "order thumb content"
-      "order actions actions"
-      "order effects effects";
+      "order content actions"
+      "thumb thumb thumb"
+      "reveals reveals reveals";
     gap: 0.5rem 0.625rem;
-    align-items: start;
+    align-items: center;
     padding: 0.625rem;
     box-sizing: border-box;
     border: 1px solid var(--default-border-color);
     border-radius: var(--border-radius-md);
-    background: var(--color-surface-low);
+    background: var(--island-bg-color);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     cursor: pointer;
     transition: background-color 120ms ease, border-color 120ms ease,
-      opacity 120ms ease;
+      box-shadow 120ms ease, opacity 120ms ease;
+  }
+
+  .PresentationSidebar__row:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
   }
 
   .PresentationSidebar__row:focus-visible {
@@ -93,7 +103,9 @@
 
   .PresentationSidebar__row--current {
     border-color: var(--color-primary);
-    background: var(--color-primary-light);
+    background: var(--island-bg-color);
+    box-shadow: inset 3px 0 0 var(--color-primary),
+      0 4px 14px rgba(15, 23, 42, 0.08);
   }
 
   .PresentationSidebar__row--hidden {
@@ -128,28 +140,26 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid var(--default-border-color);
     border-radius: 999px;
-    background: var(--island-bg-color);
+    background: var(--color-surface-low);
     color: var(--text-secondary-color);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
   }
 
   .PresentationSidebar__thumbnail {
     grid-area: thumb;
-    justify-self: start;
-    width: 5rem;
+    width: 100%;
     aspect-ratio: 16 / 10;
+    min-height: 4.75rem;
     overflow: hidden;
     border: 1px solid var(--default-border-color);
     border-radius: calc(var(--border-radius-md) - 2px);
-    background: linear-gradient(
-      135deg,
-      var(--color-surface-mid) 0%,
-      var(--island-bg-color) 100%
-    );
+    background: var(--default-bg-color);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
   }
 
   .PresentationSidebar__thumbnailCanvas {
@@ -178,18 +188,27 @@
   .PresentationSidebar__titleInput {
     width: 100%;
     min-width: 0;
-    padding: 0.375rem 0.5rem;
-    border: 1px solid var(--default-border-color);
-    border-radius: var(--border-radius-md);
-    background: var(--input-bg-color);
+    height: 1.875rem;
+    padding: 0.25rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--border-radius-md) - 2px);
+    background: transparent;
     color: var(--text-primary-color);
     font: inherit;
-    font-size: 0.875rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+
+  .PresentationSidebar__titleInput::placeholder {
+    color: var(--text-secondary-color);
+    opacity: 0.78;
   }
 
   .PresentationSidebar__titleInput:focus {
     border-color: var(--color-primary);
-    outline: 1px solid var(--color-primary);
+    background: var(--input-bg-color);
+    outline: none;
   }
 
   .PresentationSidebar__hiddenTag {
@@ -204,8 +223,8 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.375rem;
-    justify-self: stretch;
+    gap: 0.25rem;
+    justify-self: end;
     max-width: 100%;
   }
 
@@ -213,10 +232,20 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    min-width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    min-width: 1.75rem;
+    height: 1.75rem;
     padding: 0;
+    border-color: transparent;
+    border-radius: calc(var(--border-radius-md) - 2px);
+    background: transparent;
+    color: var(--text-secondary-color);
+  }
+
+  .PresentationSidebar__iconButton:hover {
+    border-color: var(--default-border-color);
+    background: var(--button-hover-bg);
+    color: var(--text-primary-color);
   }
 
   .PresentationSidebar__iconButton svg {
@@ -232,92 +261,127 @@
     cursor: grabbing;
   }
 
-  .PresentationSidebar__effects {
-    grid-area: effects;
+  .PresentationSidebar__reveals {
+    grid-area: reveals;
+    min-width: 0;
+  }
+
+  .PresentationSidebar__revealsToggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    height: 1.75rem;
+    padding: 0 0.25rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary-color);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .PresentationSidebar__revealsToggle:hover {
+    color: var(--text-primary-color);
+  }
+
+  .PresentationSidebar__revealsToggle svg {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .PresentationSidebar__revealsCount {
+    margin-inline-start: auto;
+    min-width: 1.25rem;
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: 999px;
+    color: var(--text-secondary-color);
+    font-size: 0.68rem;
+    text-align: center;
+  }
+
+  .PresentationSidebar__revealList {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    min-width: 0;
-    padding-top: 0.125rem;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
   }
 
-  .PresentationSidebar__effectsTitle {
-    color: var(--text-secondary-color);
-    font-size: 0.72rem;
-    font-weight: 700;
-  }
-
-  .PresentationSidebar__effectRow {
+  .PresentationSidebar__revealRow {
     position: relative;
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: 1.35rem minmax(0, 1fr) auto auto;
+    gap: 0.4rem;
     align-items: center;
-    gap: 0.375rem;
-    min-height: 1.75rem;
-    padding: 0.25rem 0.375rem;
+    min-height: 2rem;
+    padding: 0.25rem;
     border: 1px solid var(--default-border-color);
-    border-radius: var(--border-radius-md);
-    background: var(--island-bg-color);
-    color: var(--text-primary-color);
-    font-size: 0.74rem;
+    border-radius: calc(var(--border-radius-md) - 2px);
+    background: var(--color-surface-low);
   }
 
-  .PresentationSidebar__effectRow[draggable="true"] {
-    cursor: grab;
+  .PresentationSidebar__revealRow--invalid {
+    opacity: 0.62;
   }
 
-  .PresentationSidebar__effectRow[draggable="true"]:active {
-    cursor: grabbing;
+  .PresentationSidebar__revealRow--dragging {
+    opacity: 0.5;
   }
 
-  .PresentationSidebar__effectRow--dropBefore::before,
-  .PresentationSidebar__effectRow--dropAfter::after {
+  .PresentationSidebar__revealRow--dropBefore::before,
+  .PresentationSidebar__revealRow--dropAfter::after {
     content: "";
     position: absolute;
-    left: 0.25rem;
-    right: 0.25rem;
+    left: 0.35rem;
+    right: 0.35rem;
     height: 2px;
     border-radius: 999px;
     background: var(--color-primary);
   }
 
-  .PresentationSidebar__effectRow--dropBefore::before {
-    top: -2px;
+  .PresentationSidebar__revealRow--dropBefore::before {
+    top: -1px;
   }
 
-  .PresentationSidebar__effectRow--dropAfter::after {
-    bottom: -2px;
+  .PresentationSidebar__revealRow--dropAfter::after {
+    bottom: -1px;
   }
 
-  .PresentationSidebar__effectDragHandle {
-    display: inline-flex;
+  .PresentationSidebar__revealOrder {
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 1rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: 999px;
     color: var(--text-secondary-color);
-  }
-
-  .PresentationSidebar__effectDragHandle svg {
-    width: 0.875rem;
-    height: 0.875rem;
-  }
-
-  .PresentationSidebar__effectIndex {
-    color: var(--text-secondary-color);
+    font-size: 0.65rem;
     font-weight: 700;
   }
 
-  .PresentationSidebar__effectName {
+  .PresentationSidebar__revealLabel {
     min-width: 0;
     overflow: hidden;
+    color: var(--text-primary-color);
+    font-size: 0.74rem;
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .PresentationSidebar__effectCount {
+  .PresentationSidebar__revealEffect {
     color: var(--text-secondary-color);
-    font-size: 0.7rem;
-    white-space: nowrap;
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+
+  .PresentationSidebar__revealActions {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
   }
 
   @include isMobile {
@@ -326,11 +390,11 @@
     }
 
     .PresentationSidebar__row {
-      grid-template-columns: 1.75rem 4.5rem minmax(0, 1fr);
+      grid-template-columns: 1.75rem minmax(0, 1fr) auto;
       grid-template-areas:
-        "order thumb actions"
-        "order content content"
-        "order effects effects";
+        "order content actions"
+        "thumb thumb thumb"
+        "reveals reveals reveals";
       align-items: start;
     }
 
@@ -340,7 +404,7 @@
 
     .PresentationSidebar__thumbnail {
       grid-area: thumb;
-      width: 4.5rem;
+      min-height: 4.25rem;
     }
 
     .PresentationSidebar__content {
@@ -351,10 +415,6 @@
       grid-area: actions;
       flex-wrap: wrap;
       justify-self: end;
-    }
-
-    .PresentationSidebar__effects {
-      grid-area: effects;
     }
   }
 }
