@@ -142,6 +142,7 @@ import {
   isBindingElement,
   isBindingElementType,
   isBoundToContainer,
+  isFrameElement,
   isFrameLikeElement,
   isImageElement,
   isEmbeddableElement,
@@ -427,6 +428,7 @@ import { isMaybeMermaidDefinition } from "../mermaid";
 import { LassoTrail } from "../lasso";
 
 import { EraserTrail } from "../eraser";
+import { getPresentationElementOpacityMap } from "../presentation/framePresentation";
 
 import { getShortcutKey } from "../shortcut";
 
@@ -2088,6 +2090,17 @@ class App extends React.Component<AppProps, AppState> {
     this.visibleElements = visibleElements;
 
     const allElementsMap = this.scene.getNonDeletedElementsMap();
+    const currentPresentationFrame = this.state.presentationMode.currentFrameId
+      ? allElementsMap.get(this.state.presentationMode.currentFrameId)
+      : null;
+    const presentationElementOpacity =
+      currentPresentationFrame && isFrameElement(currentPresentationFrame)
+        ? getPresentationElementOpacityMap(
+            currentPresentationFrame,
+            allElementsMap,
+            this.state.presentationMode,
+          )
+        : null;
 
     const shouldBlockPointerEvents =
       // default back to `--ui-pointerEvents` flow if setPointerCapture
@@ -2321,6 +2334,7 @@ class App extends React.Component<AppProps, AppState> {
                                 this.elementsPendingErasure,
                               pendingFlowchartNodes:
                                 this.flowChartCreator.pendingNodes,
+                              presentationElementOpacity,
                               theme: this.state.theme,
                             }}
                           />

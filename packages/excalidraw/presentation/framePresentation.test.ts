@@ -1,15 +1,22 @@
+import { arrayToMap } from "@excalidraw/common";
 import { newElement, newFrameElement } from "@excalidraw/element";
 
 import {
   buildFramePresentationCustomData,
   collectPresentationFrames,
   getAdjacentPresentationFrame,
+  getFramePresentationData,
   getOrderedPresentationFrames,
+  getPresentationElementOpacityMap,
   getPresentationFramePreviewSignatures,
+  getPresentationRevealEffectForElements,
+  getPresentationRevealSteps,
   getVisiblePresentationFrames,
   isPresentationFrameHidden,
   movePresentationFrame,
+  reorderPresentationFrameRevealSteps,
   reorderPresentationFrames,
+  updatePresentationFrameReveals,
 } from "./framePresentation";
 
 const createFrame = (name?: string, x = 0) =>
@@ -110,7 +117,7 @@ describe("framePresentation helpers", () => {
         unrelated: { keep: true },
         storyplanePresentation: {
           version: 1,
-          reveals: [{ elementId: "el1", order: 0, effect: "fade" }],
+          reveals: [{ elementId: "el1", order: 0, effect: "fadeIn" }],
         },
       },
     };
@@ -130,8 +137,186 @@ describe("framePresentation helpers", () => {
       order: 3,
       hidden: true,
       title: "Scene 1",
-      reveals: [{ elementId: "el1", order: 0, effect: "fade" }],
+      reveals: [{ elementId: "el1", order: 0, effect: "fadeIn" }],
     });
+  });
+
+  it("normalizes legacy and invalid reveal effects", () => {
+    const frame = {
+      ...createFrame("Intro"),
+      customData: {
+        storyplanePresentation: {
+          version: 1,
+          reveals: [
+            { elementId: "a", order: 3, effect: "fade" },
+            { elementId: "b", order: 8, effect: "none" },
+            { elementId: "c", order: 10, effect: "unknown" },
+          ],
+        },
+      },
+    };
+
+    expect(getFramePresentationData(frame)?.reveals).toEqual([
+      { elementId: "a", order: 0, effect: "fadeIn", durationMs: undefined },
+    ]);
+  });
+
+  it("adds, replaces, and removes selected element reveal effects", () => {
+    const frame = createFrame("Effects");
+    const initialReveals = updatePresentationFrameReveals(
+      frame,
+      ["a", "b"],
+      "appear",
+    );
+    const frameWithInitialReveals = withPresentationData(frame, {
+      reveals: initialReveals,
+    });
+
+    expect(initialReveals).toEqual([
+      { elementId: "a", order: 0, effect: "appear", durationMs: undefined },
+      { elementId: "b", order: 0, effect: "appear", durationMs: undefined },
+    ]);
+    expect(
+      getPresentationRevealEffectForElements(frameWithInitialReveals, [
+        "a",
+        "b",
+      ]),
+    ).toBe("appear");
+
+    const replacedReveals = updatePresentationFrameReveals(
+      frameWithInitialReveals,
+      ["a"],
+      "fadeOut",
+    );
+    const frameWithReplacedReveal = withPresentationData(frame, {
+      reveals: replacedReveals,
+    });
+
+    expect(getPresentationRevealSteps(frameWithReplacedReveal)).toMatchObject([
+      {
+        order: 0,
+        reveals: [
+          { elementId: "b", effect: "appear" },
+          { elementId: "a", effect: "fadeOut" },
+        ],
+      },
+    ]);
+    expect(
+      updatePresentationFrameReveals(frameWithReplacedReveal, ["a"], "none"),
+    ).toEqual([
+      { elementId: "b", order: 0, effect: "appear", durationMs: undefined },
+    ]);
+    expect(
+      updatePresentationFrameReveals(
+        frameWithInitialReveals,
+        ["a", "b"],
+        "none",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reorders reveal steps while preserving grouped effects", () => {
+    const frame = withPresentationData(createFrame("Effects"), {
+      reveals: [
+        { elementId: "a", order: 0, effect: "appear" },
+        { elementId: "b", order: 0, effect: "appear" },
+        { elementId: "c", order: 1, effect: "fadeIn" },
+      ],
+    });
+
+    expect(reorderPresentationFrameRevealSteps(frame, 1, 0, "before")).toEqual([
+      { elementId: "c", order: 0, effect: "fadeIn", durationMs: undefined },
+      { elementId: "a", order: 1, effect: "appear", durationMs: undefined },
+      { elementId: "b", order: 1, effect: "appear", durationMs: undefined },
+    ]);
+  });
+
+  it("computes render opacity for reveal playback without mutating elements", () => {
+    const frame = withPresentationData(createFrame("Opacity"), {
+      reveals: [
+        { elementId: "appear", order: 0, effect: "appear" },
+        { elementId: "fade", order: 1, effect: "fadeIn", durationMs: 100 },
+        { elementId: "disappear", order: 2, effect: "disappear" },
+      ],
+    });
+    const appearElement = {
+      ...newElement({
+        type: "rectangle",
+        x: 20,
+        y: 20,
+        width: 40,
+        height: 40,
+        frameId: frame.id,
+      }),
+      id: "appear",
+    };
+    const fadeElement = {
+      ...newElement({
+        type: "rectangle",
+        x: 80,
+        y: 20,
+        width: 40,
+        height: 40,
+        frameId: frame.id,
+      }),
+      id: "fade",
+    };
+    const disappearElement = {
+      ...newElement({
+        type: "rectangle",
+        x: 140,
+        y: 20,
+        width: 40,
+        height: 40,
+        frameId: frame.id,
+      }),
+      id: "disappear",
+    };
+    const elementsMap = arrayToMap([
+      frame,
+      appearElement,
+      fadeElement,
+      disappearElement,
+    ]);
+
+    expect(
+      getPresentationElementOpacityMap(frame, elementsMap, {
+        active: true,
+        currentFrameId: frame.id,
+        currentRevealStep: -1,
+        revealAnimation: null,
+      }),
+    ).toEqual(
+      new Map([
+        ["appear", 0],
+        ["fade", 0],
+      ]),
+    );
+
+    expect(
+      getPresentationElementOpacityMap(frame, elementsMap, {
+        active: true,
+        currentFrameId: frame.id,
+        currentRevealStep: 1,
+        revealAnimation: {
+          frameId: frame.id,
+          order: 1,
+          direction: 1,
+          durationMs: 100,
+          progress: 0.4,
+        },
+      })?.get("fade"),
+    ).toBe(0.4);
+
+    expect(
+      getPresentationElementOpacityMap(frame, elementsMap, {
+        active: true,
+        currentFrameId: frame.id,
+        currentRevealStep: 2,
+        revealAnimation: null,
+      })?.get("disappear"),
+    ).toBe(0);
+    expect(appearElement.opacity).toBe(100);
   });
 
   it("reorders frames deterministically for drag-and-drop", () => {

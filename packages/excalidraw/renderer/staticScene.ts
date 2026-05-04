@@ -24,6 +24,7 @@ import { getElementAbsoluteCoords } from "@excalidraw/element";
 
 import type {
   ElementsMap,
+  ExcalidrawElement,
   ExcalidrawFrameLikeElement,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
@@ -170,6 +171,7 @@ const renderLinkIcon = (
   context: CanvasRenderingContext2D,
   appState: StaticCanvasAppState,
   elementsMap: ElementsMap,
+  presentationElementOpacity?: Map<ExcalidrawElement["id"], number> | null,
 ) => {
   if (element.link && !appState.selectedElementIds[element.id]) {
     const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
@@ -221,7 +223,9 @@ const renderLinkIcon = (
 
       linkCanvasCacheContext.restore();
     }
-    context.globalAlpha = element.opacity / 100;
+    context.globalAlpha =
+      (element.opacity / 100) *
+      (presentationElementOpacity?.get(element.id) ?? 1);
     context.drawImage(linkCanvas, x - centerX, y - centerY, width, height);
     context.restore();
   }
@@ -370,7 +374,13 @@ const _renderStaticScene = ({
         context.restore();
 
         if (!isExporting) {
-          renderLinkIcon(element, context, appState, elementsMap);
+          renderLinkIcon(
+            element,
+            context,
+            appState,
+            elementsMap,
+            renderConfig.presentationElementOpacity,
+          );
         }
       } catch (error: any) {
         console.error(
@@ -421,7 +431,13 @@ const _renderStaticScene = ({
             );
           }
           if (!isExporting) {
-            renderLinkIcon(element, context, appState, elementsMap);
+            renderLinkIcon(
+              element,
+              context,
+              appState,
+              elementsMap,
+              renderConfig.presentationElementOpacity,
+            );
           }
         };
         // - when exporting the whole canvas, we DO NOT apply clipping

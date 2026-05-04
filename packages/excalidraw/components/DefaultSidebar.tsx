@@ -12,6 +12,7 @@ import type { MarkOptional, Merge } from "@excalidraw/common/utility-types";
 
 import { useTunnels } from "../context/tunnels";
 import { useUIAppState } from "../context/ui-appState";
+import { t } from "../i18n";
 
 import "../components/dropdownMenu/DropdownMenu.scss";
 
@@ -22,7 +23,6 @@ import { SearchMenu } from "./SearchMenu";
 import { Sidebar } from "./Sidebar/Sidebar";
 import { withInternalFallback } from "./hoc/withInternalFallback";
 import { LibraryIcon, presentationIcon, searchIcon } from "./icons";
-import { t } from "../i18n";
 
 import type { SidebarProps, SidebarTriggerProps } from "./Sidebar/common";
 

@@ -65,6 +65,31 @@ const createFrames = () => {
   return { frameA, frameB, frameC };
 };
 
+const createFrameWithChild = () => {
+  const frame = createPresentationFrame(100);
+  const child = API.createElement({
+    type: "rectangle",
+    x: 140,
+    y: 140,
+    width: 80,
+    height: 56,
+    frameId: frame.id,
+  });
+
+  API.updateScene({
+    elements: [frame, child],
+  });
+
+  API.updateElement(frame, {
+    customData: buildFramePresentationCustomData(frame, {
+      order: 0,
+      title: "Frame",
+    }),
+  });
+
+  return { frame, child };
+};
+
 const createDataTransfer = () => {
   const data = new Map<string, string>();
 
@@ -95,6 +120,166 @@ describe("frame presentation UI", () => {
 
     await waitFor(() => {
       expect(queryByTestId(container, "toolbar-present")).not.toBeDisabled();
+    });
+  });
+
+  it("enables the Effect menu for selected elements inside one frame", async () => {
+    const { container } = await render(<Excalidraw />);
+
+    expect(queryByTestId(container, "toolbar-effects")).toBeDisabled();
+
+    const { frame, child } = createFrameWithChild();
+    API.setSelectedElements([child]);
+
+    await waitFor(() => {
+      expect(queryByTestId(container, "toolbar-effects")).not.toBeDisabled();
+    });
+
+    fireEvent.click(queryByTestId(container, "toolbar-effects")!);
+
+    await waitFor(() => {
+      expect(queryByTestId(container, "presentation-effect-menu")).not.toBe(
+        null,
+      );
+    });
+
+    fireEvent.click(queryByTestId(container, "presentation-effect-fade-in")!);
+
+    await waitFor(() => {
+      expect(
+        API.getElement(frame).customData?.storyplanePresentation?.reveals,
+      ).toMatchObject([
+        {
+          elementId: child.id,
+          order: 0,
+          effect: "fadeIn",
+        },
+      ]);
+    });
+  });
+
+  it("shows frame effects in the organizer under their frame", async () => {
+    const { container } = await render(<Excalidraw />);
+    const { frame, child } = createFrameWithChild();
+
+    API.updateElement(frame, {
+      customData: buildFramePresentationCustomData(frame, {
+        order: 0,
+        title: "Frame",
+        reveals: [{ elementId: child.id, order: 0, effect: "fadeIn" }],
+      }),
+    });
+
+    fireEvent.click(queryByTestId(container, "toolbar-frame-path")!);
+
+    await waitFor(() => {
+      expect(
+        queryByTestId(container, `presentation-effects-${frame.id}`),
+      ).not.toBe(null);
+      expect(
+        queryByTestId(container, `presentation-effect-row-${frame.id}-0`),
+      ).not.toBe(null);
+    });
+  });
+
+  it("reorders frame effects from the organizer drag and drop", async () => {
+    const { container } = await render(<Excalidraw />);
+    const frame = createPresentationFrame(100);
+    const childA = API.createElement({
+      type: "rectangle",
+      x: 140,
+      y: 140,
+      width: 80,
+      height: 56,
+      frameId: frame.id,
+    });
+    const childB = API.createElement({
+      type: "rectangle",
+      x: 140,
+      y: 220,
+      width: 80,
+      height: 56,
+      frameId: frame.id,
+    });
+
+    API.updateScene({
+      elements: [frame, childA, childB],
+    });
+    API.updateElement(frame, {
+      customData: buildFramePresentationCustomData(frame, {
+        order: 0,
+        title: "Frame",
+        reveals: [
+          { elementId: childA.id, order: 0, effect: "appear" },
+          { elementId: childB.id, order: 1, effect: "fadeIn" },
+        ],
+      }),
+    });
+
+    fireEvent.click(queryByTestId(container, "toolbar-frame-path")!);
+
+    await waitFor(() => {
+      expect(
+        queryByTestId(container, `presentation-effect-row-${frame.id}-1`),
+      ).not.toBe(null);
+    });
+
+    const firstEffectRow = queryByTestId(
+      container,
+      `presentation-effect-row-${frame.id}-0`,
+    )!;
+    firstEffectRow.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        left: 0,
+        width: 240,
+        height: 40,
+        bottom: 40,
+        right: 240,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      } as DOMRect);
+
+    const dataTransfer = createDataTransfer();
+
+    fireEvent.dragStart(
+      queryByTestId(container, `presentation-effect-row-${frame.id}-1`)!,
+      { dataTransfer },
+    );
+    fireEvent.dragOver(firstEffectRow, { clientY: 1, dataTransfer });
+    fireEvent.drop(firstEffectRow, { clientY: 1, dataTransfer });
+
+    await waitFor(() => {
+      expect(
+        API.getElement(frame).customData?.storyplanePresentation?.reveals,
+      ).toMatchObject([
+        { elementId: childB.id, order: 0, effect: "fadeIn" },
+        { elementId: childA.id, order: 1, effect: "appear" },
+      ]);
+    });
+  });
+
+  it("disables the Effect menu for mixed-frame selections", async () => {
+    const { container } = await render(<Excalidraw />);
+    const first = createFrameWithChild();
+    const frameB = createPresentationFrame(420);
+    const childB = API.createElement({
+      type: "rectangle",
+      x: 460,
+      y: 140,
+      width: 80,
+      height: 56,
+      frameId: frameB.id,
+    });
+
+    API.updateScene({
+      elements: [first.frame, first.child, frameB, childB],
+    });
+    API.setSelectedElements([first.child, childB]);
+
+    await waitFor(() => {
+      expect(queryByTestId(container, "toolbar-effects")).toBeDisabled();
     });
   });
 
@@ -192,6 +377,72 @@ describe("frame presentation UI", () => {
 
     fireEvent.click(queryByTestId(container, "presentation-previous")!);
     expect(h.state.presentationMode.currentFrameId).toBe(frameA.id);
+  });
+
+  it("steps through reveal effects before changing frames", async () => {
+    const { container } = await render(<Excalidraw />);
+    const frameA = createPresentationFrame(100);
+    const frameB = createPresentationFrame(420);
+    const child = API.createElement({
+      type: "rectangle",
+      x: 140,
+      y: 140,
+      width: 80,
+      height: 56,
+      frameId: frameA.id,
+    });
+
+    API.updateScene({
+      elements: [frameA, child, frameB],
+    });
+    API.updateElement(frameA, {
+      customData: buildFramePresentationCustomData(frameA, {
+        order: 0,
+        title: "A",
+        reveals: [{ elementId: child.id, order: 0, effect: "appear" }],
+      }),
+    });
+    API.updateElement(frameB, {
+      customData: buildFramePresentationCustomData(frameB, {
+        order: 1,
+        title: "B",
+      }),
+    });
+
+    fireEvent.click(queryByTestId(container, "toolbar-present")!);
+
+    await waitFor(() => {
+      expect(h.state.presentationMode.currentFrameId).toBe(frameA.id);
+      expect(h.state.presentationMode.currentRevealStep).toBe(-1);
+    });
+
+    fireEvent.click(queryByTestId(container, "presentation-next")!);
+
+    await waitFor(() => {
+      expect(h.state.presentationMode.currentFrameId).toBe(frameA.id);
+      expect(h.state.presentationMode.currentRevealStep).toBe(0);
+    });
+
+    fireEvent.click(queryByTestId(container, "presentation-next")!);
+
+    await waitFor(() => {
+      expect(h.state.presentationMode.currentFrameId).toBe(frameB.id);
+      expect(h.state.presentationMode.currentRevealStep).toBe(-1);
+    });
+
+    fireEvent.click(queryByTestId(container, "presentation-previous")!);
+
+    await waitFor(() => {
+      expect(h.state.presentationMode.currentFrameId).toBe(frameA.id);
+      expect(h.state.presentationMode.currentRevealStep).toBe(0);
+    });
+
+    fireEvent.click(queryByTestId(container, "presentation-previous")!);
+
+    await waitFor(() => {
+      expect(h.state.presentationMode.currentFrameId).toBe(frameA.id);
+      expect(h.state.presentationMode.currentRevealStep).toBe(-1);
+    });
   });
 
   it("exits presentation mode on Escape", async () => {

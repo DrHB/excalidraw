@@ -1,12 +1,14 @@
+import { useEffect, useState } from "react";
+
 import { COLOR_PALETTE } from "@excalidraw/common";
 import { exportToSvg } from "@excalidraw/utils/export";
-import { useEffect, useState } from "react";
 
 import type {
   ExcalidrawFrameElement,
   NonDeleted,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
+
 import type { BinaryFiles } from "../types";
 
 type PresentationFrameSvgCacheEntry = {

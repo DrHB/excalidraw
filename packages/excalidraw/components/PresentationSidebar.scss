@@ -72,7 +72,8 @@
     grid-template-columns: 2rem 5rem minmax(0, 1fr);
     grid-template-areas:
       "order thumb content"
-      "order actions actions";
+      "order actions actions"
+      "order effects effects";
     gap: 0.5rem 0.625rem;
     align-items: start;
     padding: 0.625rem;
@@ -231,6 +232,94 @@
     cursor: grabbing;
   }
 
+  .PresentationSidebar__effects {
+    grid-area: effects;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+    padding-top: 0.125rem;
+  }
+
+  .PresentationSidebar__effectsTitle {
+    color: var(--text-secondary-color);
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .PresentationSidebar__effectRow {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 1.75rem;
+    padding: 0.25rem 0.375rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: var(--border-radius-md);
+    background: var(--island-bg-color);
+    color: var(--text-primary-color);
+    font-size: 0.74rem;
+  }
+
+  .PresentationSidebar__effectRow[draggable="true"] {
+    cursor: grab;
+  }
+
+  .PresentationSidebar__effectRow[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
+  .PresentationSidebar__effectRow--dropBefore::before,
+  .PresentationSidebar__effectRow--dropAfter::after {
+    content: "";
+    position: absolute;
+    left: 0.25rem;
+    right: 0.25rem;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--color-primary);
+  }
+
+  .PresentationSidebar__effectRow--dropBefore::before {
+    top: -2px;
+  }
+
+  .PresentationSidebar__effectRow--dropAfter::after {
+    bottom: -2px;
+  }
+
+  .PresentationSidebar__effectDragHandle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    color: var(--text-secondary-color);
+  }
+
+  .PresentationSidebar__effectDragHandle svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .PresentationSidebar__effectIndex {
+    color: var(--text-secondary-color);
+    font-weight: 700;
+  }
+
+  .PresentationSidebar__effectName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .PresentationSidebar__effectCount {
+    color: var(--text-secondary-color);
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
   @include isMobile {
     .PresentationSidebar {
       padding: 0.625rem;
@@ -240,7 +329,8 @@
       grid-template-columns: 1.75rem 4.5rem minmax(0, 1fr);
       grid-template-areas:
         "order thumb actions"
-        "order content content";
+        "order content content"
+        "order effects effects";
       align-items: start;
     }
 
@@ -261,6 +351,10 @@
       grid-area: actions;
       flex-wrap: wrap;
       justify-self: end;
+    }
+
+    .PresentationSidebar__effects {
+      grid-area: effects;
     }
   }
 }
